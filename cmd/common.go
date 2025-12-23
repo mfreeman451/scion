@@ -116,6 +116,7 @@ func ProvisionAgent(agentName string, templateName string, agentImage string, gr
 	if finalScionCfg == nil {
 		finalScionCfg = &config.ScionConfig{}
 	}
+	finalScionCfg.Template = templateName
 	finalScionCfg.Agent = &config.AgentConfig{
 		Grove: groveName,
 		Name:  agentName,

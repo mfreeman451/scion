@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 //go:embed embeds/scion_hook.py
@@ -25,31 +26,12 @@ var DefaultGeminiMD string
 //go:embed embeds/bashrc
 var DefaultBashrc string
 
-func InitProject(targetDir string) error {
-	var projectDir string
-	var err error
-
-	if targetDir != "" {
-		projectDir = targetDir
-	} else {
-		projectDir, err = GetTargetProjectDir()
-		if err != nil {
-			return err
-		}
-	}
-
-	templatesDir := filepath.Join(projectDir, "templates")
-	defaultTemplateDir := filepath.Join(templatesDir, "default")
-	agentsDir := filepath.Join(projectDir, "agents")
-
+func SeedTemplateDir(templateDir string, templateName string) error {
 	// Create directories
 	dirs := []string{
-		projectDir,
-		templatesDir,
-		defaultTemplateDir,
-		filepath.Join(defaultTemplateDir, ".gemini"),
-		filepath.Join(defaultTemplateDir, ".config", "gcloud"),
-		agentsDir,
+		templateDir,
+		filepath.Join(templateDir, ".gemini"),
+		filepath.Join(templateDir, ".config", "gcloud"),
 	}
 
 	for _, dir := range dirs {
@@ -58,17 +40,22 @@ func InitProject(targetDir string) error {
 		}
 	}
 
-	// Seed default template files
+	scionJSON := DefaultScionJSON
+	if templateName != "" && templateName != "default" {
+		scionJSON = strings.Replace(scionJSON, `"template": "default"`, fmt.Sprintf(`"template": %q`, templateName), 1)
+	}
+
+	// Seed template files
 	files := []struct {
 		path    string
 		content string
 	}{
-		{filepath.Join(defaultTemplateDir, "scion.json"), DefaultScionJSON},
-		{filepath.Join(defaultTemplateDir, "scion_hook.py"), DefaultScionHookPy},
-		{filepath.Join(defaultTemplateDir, ".gemini", "settings.json"), DefaultSettingsJSON},
-		{filepath.Join(defaultTemplateDir, ".gemini", "system_prompt.md"), DefaultSystemPrompt},
-		{filepath.Join(defaultTemplateDir, ".gemini", "gemini.md"), DefaultGeminiMD},
-		{filepath.Join(defaultTemplateDir, ".bashrc"), DefaultBashrc},
+		{filepath.Join(templateDir, "scion.json"), scionJSON},
+		{filepath.Join(templateDir, "scion_hook.py"), DefaultScionHookPy},
+		{filepath.Join(templateDir, ".gemini", "settings.json"), DefaultSettingsJSON},
+		{filepath.Join(templateDir, ".gemini", "system_prompt.md"), DefaultSystemPrompt},
+		{filepath.Join(templateDir, ".gemini", "gemini.md"), DefaultGeminiMD},
+		{filepath.Join(templateDir, ".bashrc"), DefaultBashrc},
 	}
 
 	for _, f := range files {
@@ -90,6 +77,30 @@ func InitProject(targetDir string) error {
 	return nil
 }
 
+func InitProject(targetDir string) error {
+	var projectDir string
+	var err error
+
+	if targetDir != "" {
+		projectDir = targetDir
+	} else {
+		projectDir, err = GetTargetProjectDir()
+		if err != nil {
+			return err
+		}
+	}
+
+	templatesDir := filepath.Join(projectDir, "templates")
+	defaultTemplateDir := filepath.Join(templatesDir, "default")
+	agentsDir := filepath.Join(projectDir, "agents")
+
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create agents directory: %w", err)
+	}
+
+	return SeedTemplateDir(defaultTemplateDir, "default")
+}
+
 func InitGlobal() error {
 	globalDir, err := GetGlobalDir()
 	if err != nil {
@@ -100,49 +111,9 @@ func InitGlobal() error {
 	defaultTemplateDir := filepath.Join(templatesDir, "default")
 	agentsDir := filepath.Join(globalDir, "agents")
 
-	// Create directories
-	dirs := []string{
-		globalDir,
-		templatesDir,
-		defaultTemplateDir,
-		filepath.Join(defaultTemplateDir, ".gemini"),
-		agentsDir,
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create global agents directory: %w", err)
 	}
 
-	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create global directory %s: %w", dir, err)
-		}
-	}
-
-	// Seed default template files for global as well
-	files := []struct {
-		path    string
-		content string
-	}{
-		{filepath.Join(defaultTemplateDir, "scion.json"), DefaultScionJSON},
-		{filepath.Join(defaultTemplateDir, "scion_hook.py"), DefaultScionHookPy},
-		{filepath.Join(defaultTemplateDir, ".gemini", "settings.json"), DefaultSettingsJSON},
-		{filepath.Join(defaultTemplateDir, ".gemini", "system_prompt.md"), DefaultSystemPrompt},
-		{filepath.Join(defaultTemplateDir, ".gemini", "gemini.md"), DefaultGeminiMD},
-		{filepath.Join(defaultTemplateDir, ".bashrc"), DefaultBashrc},
-	}
-
-	for _, f := range files {
-		// Always write settings.json to ensure it matches current defaults
-		if filepath.Base(f.path) == "settings.json" {
-			if err := os.WriteFile(f.path, []byte(f.content), 0644); err != nil {
-				return fmt.Errorf("failed to write global file %s: %w", f.path, err)
-			}
-			continue
-		}
-
-		if _, err := os.Stat(f.path); os.IsNotExist(err) {
-			if err := os.WriteFile(f.path, []byte(f.content), 0644); err != nil {
-				return fmt.Errorf("failed to write global file %s: %w", f.path, err)
-			}
-		}
-	}
-
-	return nil
+	return SeedTemplateDir(defaultTemplateDir, "default")
 }

@@ -90,6 +90,7 @@ var listCmd = &cobra.Command{
 					if cfg.Agent.Status == "created" {
 						agents = append(agents, runtime.AgentInfo{
 							Name:      e.Name(),
+							Template:  cfg.Template,
 							Grove:     groveName,
 							GrovePath: gp,
 							Status:    "created",
@@ -110,7 +111,7 @@ var listCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tGROVE\tAGENT STATUS\tCONTAINER\tID\tIMAGE")
+		fmt.Fprintln(w, "NAME\tTEMPLATE\tGROVE\tAGENT STATUS\tCONTAINER")
 		for _, a := range agents {
 			agentStatus := "unknown"
 			if a.GrovePath != "" {
@@ -131,7 +132,7 @@ var listCmd = &cobra.Command{
 			if containerStatus == "created" && a.ID == "" {
 				containerStatus = "none"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", a.Name, a.Grove, agentStatus, containerStatus, a.ID, a.Image)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", a.Name, a.Template, a.Grove, agentStatus, containerStatus)
 		}
 		w.Flush()
 		return nil

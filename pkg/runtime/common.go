@@ -84,6 +84,9 @@ func buildCommonRunArgs(config RunConfig) ([]string, error) {
 	for k, v := range config.Labels {
 		args = append(args, "--label", fmt.Sprintf("%s=%s", k, v))
 	}
+	if config.Template != "" {
+		args = append(args, "--label", fmt.Sprintf("scion.template=%s", config.Template))
+	}
 	if config.UseTmux {
 		args = append(args, "--label", "scion.tmux=true")
 	}

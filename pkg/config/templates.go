@@ -19,6 +19,7 @@ type AgentConfig struct {
 }
 
 type ScionConfig struct {
+	Template     string       `json:"template"`
 	UnixUsername string       `json:"unix_username"`
 	Image        string       `json:"image"`
 	Detached     *bool        `json:"detached"`
@@ -92,6 +93,28 @@ func GetTemplateChain(name string) ([]*Template, error) {
 	chain = append(chain, tpl)
 
 	return chain, nil
+}
+
+func CreateTemplate(name string, global bool) error {
+	var templatesDir string
+	var err error
+
+	if global {
+		templatesDir, err = GetGlobalTemplatesDir()
+	} else {
+		templatesDir, err = GetProjectTemplatesDir()
+	}
+
+	if err != nil {
+		return err
+	}
+
+	templateDir := filepath.Join(templatesDir, name)
+	if _, err := os.Stat(templateDir); err == nil {
+		return fmt.Errorf("template %s already exists at %s", name, templateDir)
+	}
+
+	return SeedTemplateDir(templateDir, name)
 }
 
 func ListTemplates() ([]*Template, error) {

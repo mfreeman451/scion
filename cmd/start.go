@@ -176,8 +176,14 @@ form the task prompt.`,
 			agentEnv = append(agentEnv, fmt.Sprintf("GEMINI_SYSTEM_MD=/home/%s/.gemini/system_prompt.md", unixUsername))
 		}
 
+		template := ""
+		if finalScionCfg != nil {
+			template = finalScionCfg.Template
+		}
+
 		runCfg := runtime.RunConfig{
 			Name:         agentName,
+			Template:     template,
 			UnixUsername: unixUsername,
 			Image:        resolvedImage,
 			HomeDir:      agentHome,

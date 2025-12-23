@@ -9,6 +9,7 @@ import (
 type AgentInfo struct {
 	ID          string
 	Name        string
+	Template    string
 	Grove       string
 	GrovePath   string
 	Labels      map[string]string
@@ -19,6 +20,7 @@ type AgentInfo struct {
 
 type RunConfig struct {
 	Name         string
+	Template     string
 	UnixUsername string
 	Image        string
 	HomeDir      string

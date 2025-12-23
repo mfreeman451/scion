@@ -62,8 +62,27 @@ var templatesShowCmd = &cobra.Command{
 	},
 }
 
+var templatesCreateCmd = &cobra.Command{
+	Use:   "create <name>",
+	Short: "Create a new template",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
+		global, _ := cmd.Flags().GetBool("global")
+		err := config.CreateTemplate(name, global)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Template %s created successfully.\n", name)
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(templatesCmd)
 	templatesCmd.AddCommand(templatesListCmd)
 	templatesCmd.AddCommand(templatesShowCmd)
+	templatesCmd.AddCommand(templatesCreateCmd)
+
+	templatesCreateCmd.Flags().Bool("global", false, "Create a global template")
 }

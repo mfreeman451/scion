@@ -100,6 +100,7 @@ func (r *DockerRuntime) List(ctx context.Context, labelFilter map[string]string)
 		agents = append(agents, AgentInfo{
 			ID:        data.ID,
 			Name:      data.Names,
+			Template:  labels["scion.template"],
 			Grove:     labels["scion.grove"],
 			GrovePath: labels["scion.grove_path"],
 			Labels:    labels,
