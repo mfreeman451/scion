@@ -12,11 +12,17 @@ type Template struct {
 	Path string
 }
 
+type AgentConfig struct {
+	Grove string `json:"grove"`
+	Name  string `json:"name"`
+}
+
 type ScionConfig struct {
-	Image    string `json:"image"`
-	Detached *bool  `json:"detached"`
-	UseTmux  bool   `json:"use_tmux"`
-	Model    string `json:"model"`
+	Image    string       `json:"image"`
+	Detached *bool        `json:"detached"`
+	UseTmux  bool         `json:"use_tmux"`
+	Model    string       `json:"model"`
+	Agent    *AgentConfig `json:"agent,omitempty"`
 }
 
 func (c *ScionConfig) IsDetached() bool {

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ptone/scion/pkg/util"
 )
@@ -28,6 +29,36 @@ func GetRepoDir() (string, bool) {
 	return "", false
 }
 
+// GetResolvedProjectDir returns the active .scion directory based on precedence.
+func GetResolvedProjectDir(explicitPath string) (string, error) {
+	// 1. Explicitly provided via flag
+	if explicitPath != "" {
+		abs, err := filepath.Abs(explicitPath)
+		if err != nil {
+			return "", err
+		}
+		return abs, nil
+	}
+
+	// 2. Check if we are in a repo with a .scion dir at the root
+	if p, ok := GetRepoDir(); ok {
+		return p, nil
+	}
+
+	// 3. Current directory
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	projectPath := filepath.Join(wd, DotScion)
+	if info, err := os.Stat(projectPath); err == nil && info.IsDir() {
+		return projectPath, nil
+	}
+
+	// 4. Fallback to global
+	return GetGlobalDir()
+}
+
 func GetProjectDir() (string, error) {
 	// 1. Check if we are in a repo with a .scion dir at the root
 	if p, ok := GetRepoDir(); ok {
@@ -40,6 +71,35 @@ func GetProjectDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(wd, DotScion), nil
+}
+
+// GetGroveName returns the slugified name of the grove.
+func GetGroveName(projectDir string) string {
+	abs, err := filepath.Abs(projectDir)
+	if err != nil {
+		return "unknown"
+	}
+
+	parent := filepath.Dir(abs)
+	home, err := os.UserHomeDir()
+	if err == nil && parent == home {
+		return "global"
+	}
+
+	return slugify(filepath.Base(parent))
+}
+
+func slugify(s string) string {
+	s = strings.ToLower(s)
+	var res strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			res.WriteRune(r)
+		} else {
+			res.WriteRune('-')
+		}
+	}
+	return strings.Trim(res.String(), "-")
 }
 
 // GetTargetProjectDir returns the directory where a grove should be initialized.

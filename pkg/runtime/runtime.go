@@ -9,6 +9,7 @@ import (
 type AgentInfo struct {
 	ID     string
 	Name   string
+	Grove  string
 	Status string
 	Image  string
 }

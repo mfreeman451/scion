@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,30 +41,28 @@ form the task prompt, which is passed to the gemini command.`,
 
 		// 1. Prepare agent directories
 		var agentsDir string
-		projectDir, err := config.GetProjectDir()
-		hasProjectConfig := false
-		if err == nil {
-			if info, err := os.Stat(projectDir); err == nil && info.IsDir() {
-				hasProjectConfig = true
-			}
+		projectDir, err := config.GetResolvedProjectDir(grovePath)
+		if err != nil {
+			return err
 		}
 
-		if hasProjectConfig {
-			// If .scion exists, verify .gitignore if in a repo
-			if util.IsGitRepo() {
-				if !util.IsIgnored(".scion/agents/") {
-					return fmt.Errorf("security error: '.scion/agents/' must be in .gitignore when using a project-local grove")
+		groveName := config.GetGroveName(projectDir)
+
+		// Verify .gitignore if in a repo
+		if util.IsGitRepo() {
+			// Find the projectDir relative to repo root if possible
+			root, err := util.RepoRoot()
+			if err == nil {
+				rel, err := filepath.Rel(root, projectDir)
+				if err == nil && !strings.HasPrefix(rel, "..") {
+					agentsPath := filepath.Join(rel, "agents")
+					if !util.IsIgnored(agentsPath + "/") {
+						return fmt.Errorf("security error: '%s/' must be in .gitignore when using a project-local grove", agentsPath)
+					}
 				}
 			}
-			agentsDir = filepath.Join(projectDir, "agents")
-		} else {
-			// Fallback to global agents directory
-			var err error
-			agentsDir, err = config.GetGlobalAgentsDir()
-			if err != nil {
-				return err
-			}
 		}
+		agentsDir = filepath.Join(projectDir, "agents")
 
 		agentDir := filepath.Join(agentsDir, agentName)
 		agentHome := filepath.Join(agentDir, "home")
@@ -94,6 +93,7 @@ form the task prompt, which is passed to the gemini command.`,
 
 		// Track image from templates
 		resolvedImage := ""
+		var finalScionCfg *config.ScionConfig
 
 		for _, tpl := range chain {
 			fmt.Printf("Applying template: %s\n", tpl.Name)
@@ -103,10 +103,24 @@ form the task prompt, which is passed to the gemini command.`,
 
 			// Load scion.json from this template to see if it specifies an image
 			tplCfg, err := tpl.LoadConfig()
-			if err == nil && tplCfg.Image != "" {
-				resolvedImage = tplCfg.Image
+			if err == nil {
+				finalScionCfg = tplCfg
+				if tplCfg.Image != "" {
+					resolvedImage = tplCfg.Image
+				}
 			}
 		}
+
+		// Update agent-specific scion.json
+		if finalScionCfg == nil {
+			finalScionCfg = &config.ScionConfig{}
+		}
+		finalScionCfg.Agent = &config.AgentConfig{
+			Grove: groveName,
+			Name:  agentName,
+		}
+		agentCfgData, _ := json.MarshalIndent(finalScionCfg, "", "  ")
+		os.WriteFile(filepath.Join(agentHome, "scion.json"), agentCfgData, 0644)
 
 		// Flag takes ultimate precedence
 		if agentImage != "" {
@@ -185,6 +199,7 @@ form the task prompt, which is passed to the gemini command.`,
 			Labels: map[string]string{
 				"scion.agent": "true",
 				"scion.name":  agentName,
+				"scion.grove": groveName,
 			},
 		}
 

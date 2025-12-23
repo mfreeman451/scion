@@ -20,7 +20,12 @@ The system follows a Manager-Worker architecture:
 
 A **Grove** (alias: **Group**) is the grouping construct for a set of agents. The `.scion` directory represents a grove.
 
-- **Project Grove**: Linked to a project directory. By default, it is initialized at the root of the current git repository if one is detected, otherwise in the current directory. If the directory is a git repository, additional features like automatic worktree management become available. The grove name defaults to the directory name (e.g., `my-app`).
+- **Grove Name**: A slugified version of the parent directory containing the `.scion` directory. If the `.scion` directory is in the user's home folder, the name is "global".
+- **Resolution**: The `scion` command resolves the active grove in the following order:
+  1. Explicitly via the root `--grove` (`-g`) flag.
+  2. Project-level `.scion` (git root or current directory).
+  3. Global `.scion` in the home directory.
+- **Project Grove**: Linked to a project directory. By default, it is initialized at the root of the current git repository if one is detected, otherwise in the current directory.
 - **Playground Grove**: A default global grove (`playground`) for ad-hoc agents not tied to a specific project, stored in the user's home directory.
 
 ### 2. Agent Templates
@@ -29,22 +34,17 @@ A **Grove** (alias: **Group**) is the grouping construct for a set of agents. Th
 
 The `scion` tool manages the lifecycle of groves and agents.
 
+**Root Flags:**
+- `--grove`, `-g <path>`: Explicitly specify the path to a `.scion` grove directory.
+
 **Grove Commands:**
 - `scion grove init`: Initialize the `.scion/` directory representing a grove.
-    - Default: Current git repo root.
-    - Fallback: Current directory.
-    - Global (`-g`): User's home directory.
-
+...
 **Agent Commands:**
 - `scion start <agent-name> <task...>`: Provision and launch a new agent in the current grove.
-- `scion list`: Show running agents, their status, and assigned grove.
+- `scion list [--all, -a]`: Show running agents. By default, only shows agents in the current grove. Use `--all` to show agents from all groves.
 - `scion attach <agent>`: Connect the host TTY to the agent's container session.
 - `scion stop <agent>`: Gracefully terminate an agent and cleanup resources.
-
-**Template Management:**
-- `scion templates list`: Show available templates.
-- `scion templates create <name>`: Create a new template derived from default.
-- `scion templates extensions install <ext-id> --template <name>`: Add an extension to a template.
 
 ### 4. Resource Isolation
 
@@ -53,7 +53,8 @@ Each agent runs in a dedicated container with strictly isolated resources.
 - **Filesystem**:
   - **Host Path**: `.scion/agents/<agent-name>/home` (Project) or `~/.scion/agents/...` (Playground).
   - **Container Mount**: `/home/gemini`.
-  - **Contents**: Populated from the template at startup. Includes unique `settings.json`, `.config/gcloud`, and persistent `.gemini/history`.
+  - **Contents**: Populated from the template at startup. Includes unique `settings.json`, `.config/gcloud`, persistent `.gemini/history`, and an updated `scion.json` containing agent-specific metadata.
+- **Namespace Labeling**: Every agent container is labeled with `scion.grove=<grove-name>`. This grove name is also written to an `agent` section in the `scion.json` file within the agent's home directory.
 - **Network**:
   - Agents share the `gemini-cli-sandbox` bridge network but are otherwise isolated.
 
