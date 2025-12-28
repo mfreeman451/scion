@@ -130,6 +130,10 @@ func (r *DockerRuntime) Attach(ctx context.Context, id string) error {
 		}
 	}
 
+	if agent != nil && agent.Labels["scion.tmux"] == "true" {
+		return runInteractiveCommand(r.Command, "exec", "-it", agent.ID, "tmux", "attach", "-t", "scion")
+	}
+
 	target := id
 	if agent != nil {
 		target = agent.ID

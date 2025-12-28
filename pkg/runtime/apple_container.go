@@ -116,7 +116,20 @@ func (r *AppleContainerRuntime) GetLogs(ctx context.Context, id string) (string,
 }
 
 func (r *AppleContainerRuntime) Attach(ctx context.Context, id string) error {
-	return runInteractiveCommand(r.Command, "attach", id)
+	// 1. Find container to check for tmux label
+	agents, err := r.List(ctx, map[string]string{"scion.name": id})
+	if err != nil || len(agents) == 0 {
+		// Fallback to direct attach if name matching fails
+		return runInteractiveCommand(r.Command, "attach", id)
+	}
+
+	a := agents[0]
+	if a.Labels["scion.tmux"] == "true" {
+		// container exec -it <id> tmux attach -t scion
+		return runInteractiveCommand(r.Command, "exec", "-it", a.ID, "tmux", "attach", "-t", "scion")
+	}
+
+	return runInteractiveCommand(r.Command, "attach", a.ID)
 }
 
 func (r *AppleContainerRuntime) ImageExists(ctx context.Context, image string) (bool, error) {

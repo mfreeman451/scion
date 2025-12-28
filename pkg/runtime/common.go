@@ -88,6 +88,13 @@ func buildCommonRunArgs(config api.RunConfig) ([]string, error) {
 		addArg("-e", e)
 	}
 
+	if config.UseTmux {
+		if config.Labels == nil {
+			config.Labels = make(map[string]string)
+		}
+		config.Labels["scion.tmux"] = "true"
+	}
+
 	for k, v := range config.Labels {
 		addArg("--label", fmt.Sprintf("%s=%s", k, v))
 	}
@@ -96,9 +103,6 @@ func buildCommonRunArgs(config api.RunConfig) ([]string, error) {
 	}
 	if config.Template != "" {
 		addArg("--label", fmt.Sprintf("scion.template=%s", config.Template))
-	}
-	if config.UseTmux {
-		addArg("--label", "scion.tmux=true")
 	}
 
 	args = append(args, config.Image)
