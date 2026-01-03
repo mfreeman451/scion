@@ -38,6 +38,7 @@ func DeleteAgentFiles(agentName string, grovePath string) error {
 			}
 		}
 
+		_ = util.MakeWritableRecursive(agentDir)
 		if err := os.RemoveAll(agentDir); err != nil {
 			return fmt.Errorf("failed to remove agent directory: %w", err)
 		}
@@ -101,6 +102,7 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 
 	if util.IsGitRepo() {
 		// Remove existing workspace dir if it exists to allow worktree add
+		_ = util.MakeWritableRecursive(agentWorkspace)
 		os.RemoveAll(agentWorkspace)
 		if err := util.CreateWorktree(agentWorkspace, agentName); err != nil {
 			return "", "", nil, fmt.Errorf("failed to create git worktree: %w", err)

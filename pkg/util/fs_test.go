@@ -88,3 +88,62 @@ func TestCopyDir(t *testing.T) {
 		t.Errorf("file2 content mismatch")
 	}
 }
+
+func TestMakeWritableRecursive(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a read-only file
+	readOnlyFile := filepath.Join(tmpDir, "readonly.txt")
+	if err := os.WriteFile(readOnlyFile, []byte("readonly"), 0400); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a subdirectory
+	readOnlySubDir := filepath.Join(tmpDir, "readonlydir")
+	if err := os.Mkdir(readOnlySubDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a file inside that directory
+	fileInDir := filepath.Join(readOnlySubDir, "file.txt")
+	if err := os.WriteFile(fileInDir, []byte("file"), 0400); err != nil {
+		t.Fatal(err)
+	}
+
+	// NOW make the directory read-only
+	if err := os.Chmod(readOnlySubDir, 0500); err != nil {
+		t.Fatal(err)
+	}
+
+	// Ensure they are indeed read-only (u+w is NOT set)
+	info, _ := os.Stat(readOnlyFile)
+	if info.Mode().Perm()&0200 != 0 {
+		t.Fatal("file should be read-only")
+	}
+
+	// Run the function
+	if err := MakeWritableRecursive(tmpDir); err != nil {
+		t.Fatalf("MakeWritableRecursive failed: %v", err)
+	}
+
+	// Verify they are now writable
+	info, _ = os.Stat(readOnlyFile)
+	if info.Mode().Perm()&0200 == 0 {
+		t.Error("file should be writable now")
+	}
+
+	info, _ = os.Stat(readOnlySubDir)
+	if info.Mode().Perm()&0200 == 0 {
+		t.Error("subdir should be writable now")
+	}
+
+	info, _ = os.Stat(fileInDir)
+	if info.Mode().Perm()&0200 == 0 {
+		t.Error("file in subdir should be writable now")
+	}
+
+	// Verify we can now remove all
+	if err := os.RemoveAll(tmpDir); err != nil {
+		t.Errorf("os.RemoveAll failed even after MakeWritableRecursive: %v", err)
+	}
+}

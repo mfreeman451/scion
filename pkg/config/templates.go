@@ -211,6 +211,7 @@ func DeleteTemplate(name string, global bool) error {
 		return fmt.Errorf("%s is not a directory", templateDir)
 	}
 
+	_ = util.MakeWritableRecursive(templateDir)
 	return os.RemoveAll(templateDir)
 }
 
