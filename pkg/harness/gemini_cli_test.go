@@ -48,12 +48,12 @@ func TestGeminiDiscoverAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Setup agent home
-	agentHome, err := os.MkdirTemp("", "agent-home-*")
-	if err != nil {
+	// Setup agent home in a dedicated directory to avoid parent dir pollution (scion-agent.json)
+	baseDir := t.TempDir()
+	agentHome := filepath.Join(baseDir, "agents", "test-agent", "home")
+	if err := os.MkdirAll(agentHome, 0755); err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(agentHome)
 
 	g := &GeminiCLI{}
 	auth := g.DiscoverAuth(agentHome)
@@ -190,15 +190,13 @@ func TestGeminiGetCommand(t *testing.T) {
 
 func TestGeminiProvision(t *testing.T) {
 	// Setup temp agent structure
-	agentHome, err := os.MkdirTemp("", "agent-home-*")
-	if err != nil {
+	baseDir := t.TempDir()
+	agentHome := filepath.Join(baseDir, "agents", "test-agent", "home")
+	if err := os.MkdirAll(agentHome, 0755); err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(agentHome)
 
 	agentDir := filepath.Dir(agentHome)
-
-	// Write initial scion-agent.json
 	initialConfig := `{
 		"gemini": {
 			"auth_selectedType": "vertex-ai"
@@ -256,11 +254,11 @@ func TestGeminiProvision(t *testing.T) {
 
 func TestGeminiSettingsUpdateOnStart(t *testing.T) {
 	// Setup temp agent structure
-	agentHome, err := os.MkdirTemp("", "agent-home-*")
-	if err != nil {
+	baseDir := t.TempDir()
+	agentHome := filepath.Join(baseDir, "agents", "test-agent", "home")
+	if err := os.MkdirAll(agentHome, 0755); err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(agentHome)
 
 	agentDir := filepath.Dir(agentHome)
 	

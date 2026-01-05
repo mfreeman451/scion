@@ -70,7 +70,7 @@ func TestProvisionAgentEnvMerging(t *testing.T) {
 
 	// Provision agent
 	agentName := "test-agent"
-	_, _, cfg, err := ProvisionAgent(context.Background(), agentName, "test-tpl", "", projectScionDir, "test-profile", "")
+	_, _, cfg, err := ProvisionAgent(context.Background(), agentName, "test-tpl", "", projectScionDir, "test-profile", "", "")
 	if err != nil {
 		t.Fatalf("ProvisionAgent failed: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestProvisionGeminiAgentSettings(t *testing.T) {
 
 	// Provision a gemini agent
 	agentName := "gemini-agent"
-	_, _, _, err := ProvisionAgent(context.Background(), agentName, "gemini", "", projectScionDir, "", "")
+	_, _, _, err := ProvisionAgent(context.Background(), agentName, "gemini", "", projectScionDir, "", "", "")
 	if err != nil {
 		t.Fatalf("ProvisionAgent failed: %v", err)
 	}

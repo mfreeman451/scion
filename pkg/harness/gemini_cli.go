@@ -109,20 +109,30 @@ func (g *GeminiCLI) GetEnv(agentName string, agentHome string, unixUsername stri
 		env["GEMINI_SYSTEM_MD"] = fmt.Sprintf("%s/%s/system_prompt.md", util.GetHomeDir(unixUsername), g.DefaultConfigDir())
 	}
 
-	if auth.SelectedType == "gemini-api-key" || auth.SelectedType == "" {
-		if auth.GeminiAPIKey != "" {
-			env["GEMINI_API_KEY"] = auth.GeminiAPIKey
-			env["GEMINI_DEFAULT_AUTH_TYPE"] = "gemini-api-key"
-		}
-		if auth.GoogleAPIKey != "" {
-			env["GOOGLE_API_KEY"] = auth.GoogleAPIKey
-			env["GEMINI_DEFAULT_AUTH_TYPE"] = "gemini-api-key"
-		}
+	if auth.GeminiAPIKey != "" {
+		env["GEMINI_API_KEY"] = auth.GeminiAPIKey
+	}
+	if auth.GoogleAPIKey != "" {
+		env["GOOGLE_API_KEY"] = auth.GoogleAPIKey
+	}
+	if auth.VertexAPIKey != "" {
+		env["VERTEX_API_KEY"] = auth.VertexAPIKey
 	}
 
-	if auth.SelectedType == "vertex-ai" {
-		if auth.VertexAPIKey != "" {
-			env["VERTEX_API_KEY"] = auth.VertexAPIKey
+	if auth.SelectedType != "" {
+		switch auth.SelectedType {
+		case "gemini-api-key":
+			env["GEMINI_DEFAULT_AUTH_TYPE"] = "gemini-api-key"
+		case "vertex-ai":
+			env["GEMINI_DEFAULT_AUTH_TYPE"] = "vertex-ai"
+		case "oauth-personal":
+			env["GEMINI_DEFAULT_AUTH_TYPE"] = "oauth-personal"
+		}
+	} else {
+		// Legacy/Fallback behavior when SelectedType is not explicitly set
+		if auth.GeminiAPIKey != "" || auth.GoogleAPIKey != "" {
+			env["GEMINI_DEFAULT_AUTH_TYPE"] = "gemini-api-key"
+		} else if auth.VertexAPIKey != "" {
 			env["GEMINI_DEFAULT_AUTH_TYPE"] = "vertex-ai"
 		}
 	}
