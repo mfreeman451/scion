@@ -192,3 +192,30 @@ A complete `settings.json` might look like this:
   }
 }
 ```
+
+## Use Cases
+
+### Injecting Git Identity and Caches
+
+You can use profiles to inject personal configurations, such as git authorship identity, into your agents. This example also demonstrates how to mount a local directory (e.g., a package cache) to speed up development within the agent.
+
+```json
+  "profiles": {
+    "local-dev": {
+      "runtime": "container",
+      "tmux": true,
+      "env": {
+        "GIT_AUTHOR_EMAIL": "user@example.com",
+        "GIT_AUTHOR_NAME": "Jane Doe",
+        "GIT_COMMITTER_EMAIL": "user@example.com",
+        "GIT_COMMITTER_NAME": "Jane Doe"
+      },
+      "volumes": [
+        {
+          "source": "/Users/username/Projects/code/go/pkg",
+          "target": "/home/node/go/pkg/"
+        }
+      ]
+    }
+  }
+```
