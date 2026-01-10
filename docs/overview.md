@@ -18,7 +18,8 @@ Scion uses a flexible configuration system based on **Profiles**, **Runtimes**, 
 - **Global Settings**: `~/.scion/settings.json`
 - **Grove Settings**: `.scion/settings.json` (Project overrides)
 
-For detailed information on configuring Scion, see the [Settings Reference](settings.md) and [Agent Configuration Reference](scion-config-reference.md).
+For detailed information on configuring Scion, see the [Settings Reference](settings.md) and [Agent Configuration Reference](reference/scion-config-reference.md).
+To learn about the different agent tools supported by Scion, see [Supported Harnesses](supported-harnesses.md).
 
 ## Getting Started
 

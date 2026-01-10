@@ -21,6 +21,10 @@
     "claude": {
       "image": "us-central1-docker.pkg.dev/ptone-misc/public-docker/scion-claude",
       "user": "node"
+    },
+    "opencode": {
+      "image": "us-central1-docker.pkg.dev/user-content-search/public-docker/scion-opencode:latest",
+      "user": "node"
     }
   },
   "profiles": {

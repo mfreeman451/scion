@@ -44,24 +44,24 @@ func (o *OpenCode) GetCommand(task string, resume bool, baseArgs []string) []str
 	args := []string{"opencode"}
 	if resume {
 		args = append(args, "--continue")
-	}
-
-	// If task is provided and we are not resuming, use run command
-	// Note: Interactive mode is default for `opencode` with no args.
-	// `opencode run "task"` is for non-interactive/programmatic.
-	// If the user provided a task via CLI, they might expect it to run that task.
-	if !resume && task != "" {
-		// Replace the command with run task
-		args = []string{"opencode", "run", task}
+	} else {
+		args = append(args, "--prompt")
+		if task != "" {
+			args = append(args, task)
+		}
 	}
 
 	args = append(args, baseArgs...)
 	return args
 }
-
 func (o *OpenCode) PropagateFiles(homeDir, unixUsername string, auth api.AuthConfig) error {
 	if auth.OpenCodeAuthFile != "" {
 		dst := filepath.Join(homeDir, ".local", "share", "opencode", "auth.json")
+		// Check if it already exists in the template/agent home
+		if _, err := os.Stat(dst); err == nil {
+			return nil
+		}
+
 		if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
 			return err
 		}
@@ -77,7 +77,7 @@ func (o *OpenCode) GetVolumes(unixUsername string, auth api.AuthConfig) []api.Vo
 }
 
 func (o *OpenCode) DefaultConfigDir() string {
-	return ".opencode"
+	return ""
 }
 
 func (o *OpenCode) HasSystemPrompt(agentHome string) bool {
@@ -85,7 +85,8 @@ func (o *OpenCode) HasSystemPrompt(agentHome string) bool {
 }
 
 func (o *OpenCode) Provision(ctx context.Context, agentName, agentHome, agentWorkspace string) error {
-	return nil
+	auth := o.DiscoverAuth(agentHome)
+	return o.PropagateFiles(agentHome, "", auth)
 }
 
 func (o *OpenCode) GetEmbedDir() string {

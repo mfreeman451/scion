@@ -163,11 +163,14 @@ func UpdateDefaultTemplates(global bool) error {
 	if err := SeedTemplateDir(filepath.Join(templatesDir, "gemini"), "gemini", "gemini", "gemini", ".gemini", true); err != nil {
 		return err
 	}
-	return SeedTemplateDir(filepath.Join(templatesDir, "claude"), "claude", "claude", "claude", ".claude", true)
+	if err := SeedTemplateDir(filepath.Join(templatesDir, "claude"), "claude", "claude", "claude", ".claude", true); err != nil {
+		return err
+	}
+	return SeedTemplateDir(filepath.Join(templatesDir, "opencode"), "opencode", "opencode", "opencode", "", true)
 }
 
 func DeleteTemplate(name string, global bool) error {
-	if name == "default" || name == "gemini" || name == "claude" {
+	if name == "default" || name == "gemini" || name == "claude" || name == "opencode" {
 		return fmt.Errorf("cannot delete protected template: %s", name)
 	}
 
