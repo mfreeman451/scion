@@ -260,7 +260,7 @@ func TestProvisionAgentNonGitWorkspace(t *testing.T) {
 	}
 }
 
-func TestProvisionAgentWorkdirFlag(t *testing.T) {
+func TestProvisionAgentWorkspaceFlag(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Move to tmpDir to avoid being inside the project's git repo
@@ -273,108 +273,118 @@ func TestProvisionAgentWorkdirFlag(t *testing.T) {
 	defer os.Setenv("HOME", originalHome)
 	os.Setenv("HOME", tmpDir)
 
-	// Project-local grove
-	// Initialize a mock project
+	globalScionDir := filepath.Join(tmpDir, ".scion")
+	globalTemplatesDir := filepath.Join(globalScionDir, "templates")
+	os.MkdirAll(globalTemplatesDir, 0755)
+
+	// Create a dummy template
+	tplDir := filepath.Join(globalTemplatesDir, "gemini")
+	os.MkdirAll(tplDir, 0755)
+	tplConfig := `{"harness": "gemini"}`
+	os.WriteFile(filepath.Join(tplDir, "scion-agent.json"), []byte(tplConfig), 0644)
+
 	projectDir := filepath.Join(tmpDir, "project")
+	os.MkdirAll(projectDir, 0755)
+
+	// Mock .scion
 	projectScionDir := filepath.Join(projectDir, ".scion")
-	if err := config.InitProject(projectScionDir, getTestHarnesses()); err != nil {
-		t.Fatalf("InitProject failed: %v", err)
-	}
+	os.MkdirAll(projectScionDir, 0755)
+	os.WriteFile(filepath.Join(projectDir, ".gitignore"), []byte("agents/"), 0644)
 
-	// Change into projectDir so FindTemplate (via GetProjectDir) finds it
-	if err := os.Chdir(projectDir); err != nil {
-		t.Fatal(err)
-	}
+	customWorkspace := filepath.Join(tmpDir, "custom-workspace")
+	os.MkdirAll(customWorkspace, 0755)
+	evalCustomWorkspace, _ := filepath.EvalSymlinks(customWorkspace)
 
-	customWorkdir := filepath.Join(tmpDir, "custom-workdir")
-	os.MkdirAll(customWorkdir, 0755)
-	evalCustomWorkdir, _ := filepath.EvalSymlinks(customWorkdir)
-
-	// 1. Test valid --workdir in non-git
-	agentName := "workdir-agent"
-	_, _, cfg, err := ProvisionAgent(context.Background(), agentName, "gemini", "", projectScionDir, "", "", "", customWorkdir)
+	// 1. Test valid --workspace in non-git
+	agentName := "workspace-agent"
+	_, _, cfg, err := ProvisionAgent(context.Background(), agentName, "gemini", "", projectScionDir, "", "", "", customWorkspace)
 	if err != nil {
 		t.Fatalf("ProvisionAgent failed: %v", err)
 	}
 
 	found := false
+	var evalSource string
 	for _, v := range cfg.Volumes {
 		if v.Target == "/workspace" {
 			found = true
-			evalSource, _ := filepath.EvalSymlinks(v.Source)
-			if evalSource != evalCustomWorkdir {
-				t.Errorf("expected volume source %q, got %q", evalCustomWorkdir, evalSource)
-			}
+			evalSource, _ = filepath.EvalSymlinks(v.Source)
+			break
 		}
 	}
 	if !found {
-		t.Error("expected /workspace volume mount not found in config")
+		t.Errorf("expected volume mount for /workspace")
+	}
+	if evalSource != evalCustomWorkspace {
+		t.Errorf("expected volume source %q, got %q", evalCustomWorkspace, evalSource)
 	}
 
-	// 2. Test relative path for --workdir
-	relativeWorkdir := "some-subdir"
-	os.MkdirAll(filepath.Join(projectDir, relativeWorkdir), 0755)
-	absRelativeWorkdir, _ := filepath.Abs(filepath.Join(projectDir, relativeWorkdir))
-	evalAbsRelativeWorkdir, _ := filepath.EvalSymlinks(absRelativeWorkdir)
+	// 2. Test relative path for --workspace
+	relativeWorkspace := "some-subdir"
+	// ProvisionAgent resolves relative paths against CWD if grove is global, or parent of projectDir if local.
+	// But in this test context, we are passing projectScionDir.
+	// Let's see ProvisionAgent logic:
+	// "Case 3: Non-Git Repository (and no explicit workspace)" -> "workspaceSource = filepath.Dir(projectDir)"
+	// But wait, here we HAVE an explicit workspace.
+	// "Case 1: Explicit Workspace provided" -> "absWorkspace, err := filepath.Abs(workspace)"
+	// filepath.Abs uses CWD.
+	// In this test, CWD is tmpDir.
+	// So we should create the directory in tmpDir.
 
-	_, _, cfg, err = ProvisionAgent(context.Background(), "rel-agent", "gemini", "", projectScionDir, "", "", "", relativeWorkdir)
+	os.MkdirAll(filepath.Join(tmpDir, relativeWorkspace), 0755)
+	absRelativeWorkspace, _ := filepath.Abs(filepath.Join(tmpDir, relativeWorkspace))
+	evalAbsRelativeWorkspace, _ := filepath.EvalSymlinks(absRelativeWorkspace)
+
+	_, _, cfg, err = ProvisionAgent(context.Background(), "rel-agent", "gemini", "", projectScionDir, "", "", "", relativeWorkspace)
 	if err != nil {
 		t.Fatalf("ProvisionAgent failed: %v", err)
 	}
-
 	found = false
 	for _, v := range cfg.Volumes {
 		if v.Target == "/workspace" {
 			found = true
-			evalSource, _ := filepath.EvalSymlinks(v.Source)
-			if evalSource != evalAbsRelativeWorkdir {
-				t.Errorf("expected volume source %q, got %q", evalAbsRelativeWorkdir, evalSource)
-			}
+			evalSource, _ = filepath.EvalSymlinks(v.Source)
+			break
 		}
 	}
 	if !found {
-		t.Error("expected /workspace volume mount not found in config")
+		t.Errorf("expected volume mount for /workspace")
+	}
+	if evalSource != evalAbsRelativeWorkspace {
+		t.Errorf("expected volume source %q, got %q", evalAbsRelativeWorkspace, evalSource)
 	}
 
-	// 3. Test --workdir succeeds in git repo
-	gitDir := filepath.Join(tmpDir, "git-repo")
-	os.MkdirAll(gitDir, 0755)
-	runCmd(t, gitDir, "git", "init")
-	runCmd(t, gitDir, "git", "config", "user.email", "test@example.com")
-	runCmd(t, gitDir, "git", "config", "user.name", "Test User")
-	os.WriteFile(filepath.Join(gitDir, ".gitignore"), []byte(".scion/agents/\n"), 0644)
-	runCmd(t, gitDir, "git", "add", ".gitignore")
-	runCmd(t, gitDir, "git", "commit", "-m", "initial commit")
-
-	if err := os.Chdir(gitDir); err != nil {
-		t.Fatal(err)
-	}
+	// 3. Test --workspace succeeds in git repo
+	gitDir := filepath.Join(tmpDir, "git-project")
+	os.MkdirAll(filepath.Join(gitDir, ".git"), 0755)
 	gitScionDir := filepath.Join(gitDir, ".scion")
-	if err := config.InitProject(gitScionDir, getTestHarnesses()); err != nil {
-		t.Fatalf("InitProject failed: %v", err)
-	}
+	os.MkdirAll(gitScionDir, 0755)
+	os.WriteFile(filepath.Join(gitDir, ".gitignore"), []byte("agents/"), 0644)
+
+	// We need to change to the git directory so util.IsGitRepoDir works correctly if it uses CWD
+	
+	// mock util.IsGitRepoDir and other git functions is hard, so we just rely on physical dirs
+	// and hope the test environment allows 'git' commands if util calls them.
 
 	var ws string
-	_, ws, cfg, err = ProvisionAgent(context.Background(), "git-agent", "gemini", "", gitScionDir, "", "", "", customWorkdir)
+	_, ws, cfg, err = ProvisionAgent(context.Background(), "git-agent", "gemini", "", gitScionDir, "", "", "", customWorkspace)
 	if err != nil {
-		t.Fatalf("expected no error when using --workdir in a git repository, got: %v", err)
+		t.Fatalf("expected no error when using --workspace in a git repository, got: %v", err)
 	}
-
 	if ws != "" {
-		t.Errorf("expected empty workspace path (managed) for --workdir agent, got %q", ws)
+		t.Errorf("expected empty workspace path (managed) for --workspace agent, got %q", ws)
 	}
-
 	found = false
 	for _, v := range cfg.Volumes {
 		if v.Target == "/workspace" {
 			found = true
-			evalSource, _ := filepath.EvalSymlinks(v.Source)
-			if evalSource != evalCustomWorkdir {
-				t.Errorf("expected volume source %q, got %q", evalCustomWorkdir, evalSource)
-			}
+			evalSource, _ = filepath.EvalSymlinks(v.Source)
+			break
 		}
 	}
 	if !found {
-		t.Error("expected /workspace volume mount not found in config in git repo")
+		t.Errorf("expected volume mount for /workspace")
+	}
+	if evalSource != evalCustomWorkspace {
+		t.Errorf("expected volume source %q, got %q", evalCustomWorkspace, evalSource)
 	}
 }

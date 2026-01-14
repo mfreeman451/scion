@@ -50,14 +50,14 @@ func DeleteAgentFiles(agentName string, grovePath string, removeBranch bool) (bo
 }
 
 func (m *AgentManager) Provision(ctx context.Context, opts api.StartOptions) (*api.ScionConfig, error) {
-	_, _, _, cfg, err := GetAgent(ctx, opts.Name, opts.Template, opts.Image, opts.GrovePath, opts.Profile, "created", opts.Branch, opts.Workdir)
+	_, _, _, cfg, err := GetAgent(ctx, opts.Name, opts.Template, opts.Image, opts.GrovePath, opts.Profile, "created", opts.Branch, opts.Workspace)
 	if err == nil {
 		_ = UpdateAgentConfig(opts.Name, opts.GrovePath, "created", m.Runtime.Name(), opts.Profile, "")
 	}
 	return cfg, err
 }
 
-func ProvisionAgent(ctx context.Context, agentName string, templateName string, agentImage string, grovePath string, profileName string, optionalStatus string, branch string, workdir string) (string, string, *api.ScionConfig, error) {
+func ProvisionAgent(ctx context.Context, agentName string, templateName string, agentImage string, grovePath string, profileName string, optionalStatus string, branch string, workspace string) (string, string, *api.ScionConfig, error) {
 	// 1. Prepare agent directories
 	projectDir, err := config.GetResolvedProjectDir(grovePath)
 	if err != nil {
@@ -108,18 +108,23 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 	shouldCreateWorktree := false
 
 	// Workspace Resolution Logic
-	if workdir != "" {
+	if workspace != "" {
 		// Case 1: Explicit Workspace provided
 		// This overrides everything else. We mount this path directly.
-		absWorkdir, err := filepath.Abs(workdir)
+		absWorkspace, err := filepath.Abs(workspace)
 		if err != nil {
-			return "", "", nil, fmt.Errorf("failed to resolve absolute path for workdir %s: %w", workdir, err)
+			return "", "", nil, fmt.Errorf("failed to resolve absolute path for workspace %s: %w", workspace, err)
 		}
-		workspaceSource = absWorkdir
+
+		if _, err := os.Stat(absWorkspace); os.IsNotExist(err) {
+			return "", "", nil, fmt.Errorf("workspace path does not exist: %s", absWorkspace)
+		}
+
+		workspaceSource = absWorkspace
 		agentWorkspace = "" // We are not using the managed local workspace directory
 
 	} else if isGit {
-		// Case 2: Git Repository (and no explicit workdir)
+		// Case 2: Git Repository (and no explicit workspace)
 		targetBranch := branch
 		if targetBranch == "" {
 			targetBranch = agentName
@@ -142,7 +147,7 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 		}
 
 	} else {
-		// Case 3: Non-Git Repository (and no explicit workdir)
+		// Case 3: Non-Git Repository (and no explicit workspace)
 		if groveName == "global" {
 			workspaceSource, _ = os.Getwd()
 		} else {
@@ -379,7 +384,7 @@ func UpdateAgentConfig(agentName string, grovePath string, status string, runtim
 	return nil
 }
 
-func GetAgent(ctx context.Context, agentName string, templateName string, agentImage string, grovePath string, profileName string, optionalStatus string, branch string, workdir string) (string, string, string, *api.ScionConfig, error) {
+func GetAgent(ctx context.Context, agentName string, templateName string, agentImage string, grovePath string, profileName string, optionalStatus string, branch string, workspace string) (string, string, string, *api.ScionConfig, error) {
 	projectDir, err := config.GetResolvedProjectDir(grovePath)
 	if err != nil {
 		return "", "", "", nil, err
@@ -410,7 +415,7 @@ func GetAgent(ctx context.Context, agentName string, templateName string, agentI
 		if templateName == "" {
 			templateName = defaultTemplate
 		}
-		home, ws, cfg, err := ProvisionAgent(ctx, agentName, templateName, agentImage, grovePath, profileName, optionalStatus, branch, workdir)
+		home, ws, cfg, err := ProvisionAgent(ctx, agentName, templateName, agentImage, grovePath, profileName, optionalStatus, branch, workspace)
 		return agentDir, home, ws, cfg, err
 	}
 
