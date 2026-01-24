@@ -17,13 +17,13 @@
     ]
   },
   "hooks": {
-    "SessionStart": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_tool.py"}]}],
-    "SessionEnd": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_tool.py"}]}],
-    "UserPromptSubmit": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_tool.py"}]}],
-    "Stop": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_tool.py"}]}],
-    "SubagentStop": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_tool.py"}]}],
-    "PreToolUse": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_tool.py"}]}],
-    "PostToolUse": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_tool.py"}]}],
-    "Notification": [{"matcher": "ToolPermission", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_tool.py"}]}]
+    "SessionStart": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "sciontool hook --dialect=claude"}]}],
+    "SessionEnd": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "sciontool hook --dialect=claude"}]}],
+    "UserPromptSubmit": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "sciontool hook --dialect=claude"}]}],
+    "Stop": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "sciontool hook --dialect=claude"}]}],
+    "SubagentStop": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "sciontool hook --dialect=claude"}]}],
+    "PreToolUse": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "sciontool hook --dialect=claude"}]}],
+    "PostToolUse": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "sciontool hook --dialect=claude"}]}],
+    "Notification": [{"matcher": "ToolPermission", "hooks": [{"name": "scion-status", "type": "command", "command": "sciontool hook --dialect=claude"}]}]
   }
 }

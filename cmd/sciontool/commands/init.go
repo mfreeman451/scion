@@ -13,6 +13,7 @@ import (
 	reaper "github.com/ramr/go-reaper"
 	"github.com/spf13/cobra"
 
+	"github.com/ptone/scion-agent/pkg/sciontool/hooks"
 	"github.com/ptone/scion-agent/pkg/sciontool/supervisor"
 )
 
@@ -80,6 +81,16 @@ func runInit(args []string) int {
 	logInfo("Child command: %v", childArgs)
 	logInfo("Grace period: %s", gracePeriod)
 
+	// Initialize lifecycle hooks manager
+	lifecycleManager := hooks.NewLifecycleManager()
+
+	// Run pre-start hooks (after setup, before child process)
+	logInfo("Running pre-start hooks...")
+	if err := lifecycleManager.RunPreStart(); err != nil {
+		logError("Pre-start hooks failed: %v", err)
+		// Continue anyway - hooks failing shouldn't prevent startup
+	}
+
 	// Create supervisor with configuration
 	config := supervisor.Config{
 		GracePeriod: gracePeriod,
@@ -96,14 +107,56 @@ func runInit(args []string) int {
 	defer sigHandler.Stop()
 
 	// Run the child process under supervision
-	exitCode, err := sup.Run(ctx, childArgs)
-	if err != nil {
-		logError("Supervisor error: %v", err)
+	// We use a goroutine to allow post-start hooks to run after process starts
+	exitChan := make(chan struct {
+		code int
+		err  error
+	}, 1)
+
+	go func() {
+		code, err := sup.Run(ctx, childArgs)
+		exitChan <- struct {
+			code int
+			err  error
+		}{code, err}
+	}()
+
+	// Wait a moment for process to start, then run post-start hooks
+	// Use a short timeout to detect immediate startup failures
+	select {
+	case result := <-exitChan:
+		// Child exited immediately - likely a startup error
+		if result.err != nil {
+			logError("Supervisor error: %v", result.err)
+			return 1
+		}
+		logInfo("Child exited with code %d", result.code)
+		return result.code
+	case <-time.After(100 * time.Millisecond):
+		// Process appears to be running, execute post-start hooks
+		logInfo("Running post-start hooks...")
+		if err := lifecycleManager.RunPostStart(); err != nil {
+			logError("Post-start hooks failed: %v", err)
+			// Continue anyway
+		}
+	}
+
+	// Wait for child to exit
+	result := <-exitChan
+
+	// Run session-end hooks (graceful shutdown)
+	logInfo("Running session-end hooks...")
+	if err := lifecycleManager.RunSessionEnd(); err != nil {
+		logError("Session-end hooks failed: %v", err)
+	}
+
+	if result.err != nil {
+		logError("Supervisor error: %v", result.err)
 		return 1
 	}
 
-	logInfo("Child exited with code %d", exitCode)
-	return exitCode
+	logInfo("Child exited with code %d", result.code)
+	return result.code
 }
 
 // extractChildCommand extracts the command arguments.
