@@ -14,6 +14,7 @@ import (
 	"github.com/ptone/scion-agent/pkg/api"
 	"github.com/ptone/scion-agent/pkg/apiclient"
 	"github.com/ptone/scion-agent/pkg/config"
+	"github.com/ptone/scion-agent/pkg/harness"
 	"github.com/ptone/scion-agent/pkg/hub"
 	"github.com/ptone/scion-agent/pkg/runtime"
 	"github.com/ptone/scion-agent/pkg/runtimehost"
@@ -108,6 +109,19 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 	}
 	if cmd.Flags().Changed("dev-auth") {
 		cfg.Auth.Enabled = enableDevAuth
+	}
+
+	// Ensure global directory exists and settings are initialized.
+	// This is required for persisting the runtime host identity.
+	globalDir, err := config.GetGlobalDir()
+	if err != nil {
+		return fmt.Errorf("failed to get global directory: %w", err)
+	}
+	if _, err := os.Stat(globalDir); os.IsNotExist(err) {
+		log.Println("Initializing global scion directory...")
+		if err := config.InitGlobal(harness.All()); err != nil {
+			return fmt.Errorf("failed to initialize global config: %w", err)
+		}
 	}
 
 	// Check if at least one server is enabled
@@ -234,14 +248,42 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 		// Create agent manager
 		mgr = agent.NewManager(rt)
 
-		// Generate host ID if not set
-		hostID = cfg.RuntimeHost.HostID
-		if hostID == "" {
-			hostID = api.NewUUID()
+		// Load settings to get/persist runtime host identity.
+		// The hostID should be durable across server restarts, so we store it in settings.
+		settings, err := config.LoadSettings(globalDir)
+		if err != nil {
+			log.Printf("Warning: failed to load settings: %v", err)
+			settings = &config.Settings{}
 		}
 
-		// Set host name
-		hostName = cfg.RuntimeHost.HostName
+		// Ensure hub config exists in settings
+		if settings.Hub == nil {
+			settings.Hub = &config.HubClientConfig{}
+		}
+
+		// Get host ID from settings, or generate and persist if not set.
+		// Priority: settings.Hub.HostID > cfg.RuntimeHost.HostID > generate new
+		hostID = settings.Hub.HostID
+		if hostID == "" {
+			// Fall back to server config if set
+			hostID = cfg.RuntimeHost.HostID
+		}
+		if hostID == "" {
+			// Generate new UUID and persist it
+			hostID = api.NewUUID()
+			if err := config.UpdateSetting(globalDir, "hub.hostId", hostID, true); err != nil {
+				log.Printf("Warning: failed to persist host ID to settings: %v", err)
+			} else {
+				log.Printf("Generated and persisted new host ID: %s", hostID)
+			}
+		}
+
+		// Get host nickname from settings, or use hostname as default.
+		// Priority: settings.Hub.HostNickname > cfg.RuntimeHost.HostName > os.Hostname()
+		hostName = settings.Hub.HostNickname
+		if hostName == "" {
+			hostName = cfg.RuntimeHost.HostName
+		}
 		if hostName == "" {
 			if hostname, err := os.Hostname(); err == nil {
 				hostName = hostname

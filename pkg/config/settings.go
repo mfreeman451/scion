@@ -77,8 +77,12 @@ type HubClientConfig struct {
 	APIKey string `json:"apiKey,omitempty" yaml:"apiKey,omitempty" koanf:"apiKey"`
 	// GroveID is the unique identifier for the grove when registered with the Hub
 	GroveID string `json:"groveId,omitempty" yaml:"groveId,omitempty" koanf:"groveId"`
-	// HostID is the unique identifier for this host when registered with the Hub
+	// HostID is the unique identifier for this host when registered with the Hub.
+	// This is a durable UUID that persists across server restarts.
 	HostID string `json:"hostId,omitempty" yaml:"hostId,omitempty" koanf:"hostId"`
+	// HostNickname is a human-readable name for this host.
+	// If not set, defaults to the system hostname.
+	HostNickname string `json:"hostNickname,omitempty" yaml:"hostNickname,omitempty" koanf:"hostNickname"`
 	// HostToken is the token received when registering this host with the Hub
 	HostToken string `json:"hostToken,omitempty" yaml:"hostToken,omitempty" koanf:"hostToken"`
 }
@@ -533,6 +537,11 @@ func UpdateSetting(grovePath string, key string, value string, global bool) erro
 			current.Hub = &HubClientConfig{}
 		}
 		current.Hub.HostToken = value
+	case "hub.hostNickname":
+		if current.Hub == nil {
+			current.Hub = &HubClientConfig{}
+		}
+		current.Hub.HostNickname = value
 	case "hub.enabled":
 		if current.Hub == nil {
 			current.Hub = &HubClientConfig{}
@@ -622,6 +631,11 @@ func GetSettingValue(s *Settings, key string) (string, error) {
 			return s.Hub.HostToken, nil
 		}
 		return "", nil
+	case "hub.hostNickname":
+		if s.Hub != nil {
+			return s.Hub.HostNickname, nil
+		}
+		return "", nil
 	case "hub.enabled":
 		if s.Hub != nil && s.Hub.Enabled != nil {
 			if *s.Hub.Enabled {
@@ -670,6 +684,7 @@ func GetSettingsMap(s *Settings) map[string]string {
 		}
 		m["hub.groveId"] = s.Hub.GroveID
 		m["hub.hostId"] = s.Hub.HostID
+		m["hub.hostNickname"] = s.Hub.HostNickname
 		if s.Hub.HostToken != "" {
 			m["hub.hostToken"] = "********" // Mask host token
 		}
