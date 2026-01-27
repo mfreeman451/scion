@@ -22,6 +22,22 @@ The **Grove** is the fundamental unit of Hub registration, not the Runtime Host.
 3. **Groves can span hosts** - Multiple developers (runtime hosts) can contribute agents to the same grove.
 4. **Profiles are per-grove** - Runtime configuration (Docker vs K8s, resource limits) is defined in grove settings.
 
+### Key Architectural Principle: Explicit Mode Selection (No Silent Fallback)
+
+The operating mode (Solo vs Hub-connected) must always be **explicit and unambiguous**. When Hub integration is enabled, any Hub connectivity or configuration issue results in an **error**, not a silent fallback to local mode.
+
+**Rationale:**
+1. **Clarity of operation** - Users must always know whether operations are being performed locally or via the Hub. Ambiguity leads to confusion when debugging issues.
+2. **Predictable behavior** - If Hub mode is enabled but the Hub is unreachable, failing loudly ensures users are aware of the problem rather than unknowingly operating in a degraded state.
+3. **Data consistency** - Silent fallback could lead to split-brain scenarios where some operations go to the Hub and others remain local.
+4. **Debugging clarity** - When bugs occur, it must be immediately clear which mode was active. Silent fallback obscures this.
+
+**Implementation:**
+*   `scion hub enable` explicitly enables Hub mode
+*   `scion hub disable` explicitly returns to Solo mode
+*   `--no-hub` flag provides per-invocation override to force local mode
+*   When Hub is enabled but unavailable/misconfigured, CLI commands return an error with guidance to either fix the Hub connection or run `scion hub disable`
+
 ### Modes
 
 #### Solo

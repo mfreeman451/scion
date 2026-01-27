@@ -32,9 +32,11 @@ type HubContext struct {
 }
 
 // CheckHubAvailability checks if Hub integration is enabled and returns a ready-to-use
-// Hub context if available. Returns nil if Hub should not be used (not enabled, not configured,
-// or --no-hub flag is set).
-// If Hub is enabled but unhealthy, returns an error with guidance to disable.
+// Hub context if available. Returns nil if Hub should not be used (not enabled or --no-hub flag is set).
+//
+// IMPORTANT: When Hub is enabled, this function will return an error if the Hub is
+// unavailable or misconfigured. There is NO silent fallback to local mode - this is
+// by design to ensure users always know which mode they're operating in.
 func CheckHubAvailability(grovePath string) (*HubContext, error) {
 	// Check if --no-hub flag is set
 	if noHub {
@@ -52,9 +54,10 @@ func CheckHubAvailability(grovePath string) (*HubContext, error) {
 		return nil, nil
 	}
 
+	// Hub is enabled - from here on, any failure is an error (no silent fallback)
 	endpoint := GetHubEndpoint(settings)
 	if endpoint == "" {
-		return nil, nil
+		return nil, wrapHubError(fmt.Errorf("Hub is enabled but no endpoint configured.\n\nConfigure via: scion config set hub.endpoint <url>"))
 	}
 
 	// Hub is enabled and configured, try to connect
