@@ -34,3 +34,14 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 		Centralized state in a Hub with distributed execution on Runtime Hosts.
 	</Card>
 </CardGrid>
+
+## How it Works
+
+```d2
+Hub: {shape: cloud}
+RuntimeHost: {shape: cylinder}
+Agent: {shape: circle}
+
+Hub -> RuntimeHost: Orchestrates
+RuntimeHost -> Agent: Spawns
+```

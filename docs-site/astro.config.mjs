@@ -1,10 +1,12 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import d2 from 'astro-d2';
 
 // https://astro.build/config
 export default defineConfig({
 	integrations: [
+		d2(),
 		starlight({
 			title: 'Scion',
 			social: [
@@ -12,22 +14,61 @@ export default defineConfig({
 			],
 			sidebar: [
 				{
-					label: 'Start Here',
+					label: 'Foundations',
 					items: [
 						{ label: 'Overview', slug: 'overview' },
-						{ label: 'Installation', slug: 'install' },
-						{ label: 'Concepts', slug: 'concepts' },
-						{ label: 'Settings', slug: 'settings' },
+						{ label: 'Core Concepts', slug: 'concepts' },
 						{ label: 'Supported Harnesses', slug: 'supported-harnesses' },
+						{ label: 'Glossary', slug: 'glossary' },
 					],
 				},
 				{
-					label: 'Guides',
-					autogenerate: { directory: 'guides' },
+					label: 'Developer Guide',
+					items: [
+						{
+							label: 'Local Workflow',
+							items: [
+								{ label: 'Installation', slug: 'install' },
+								{ label: 'Workspace Management', slug: 'guides/workspace' },
+							],
+						},
+						{
+							label: 'Team Workflow',
+							items: [
+								{ label: 'Connecting to Hub', slug: 'guides/hosted-user' },
+								{ label: 'Web Dashboard', slug: 'guides/dashboard' },
+								{ label: 'Secret Management', slug: 'guides/secrets' },
+							],
+						},
+						{
+							label: 'Skills',
+							items: [
+								{ label: 'Templates', slug: 'guides/templates' },
+								{ label: 'Tmux Sessions', slug: 'guides/tmux' },
+								{ label: 'Observability', slug: 'guides/observability' },
+							],
+						},
+					],
+				},
+				{
+					label: 'Operations & Hosting',
+					items: [
+						{ label: 'Local Governance', slug: 'guides/local-governance' },
+						{ label: 'Hub Setup', slug: 'guides/hub-server' },
+						{ label: 'Runtimes', slug: 'guides/runtimes' },
+						{ label: 'Kubernetes', slug: 'guides/kubernetes' },
+						{ label: 'Security', slug: 'guides/auth' },
+						{ label: 'Permissions', slug: 'guides/permissions' },
+						{ label: 'Metrics', slug: 'guides/metrics' },
+					],
 				},
 				{
 					label: 'Reference',
 					autogenerate: { directory: 'reference' },
+				},
+				{
+					label: 'Contributing',
+					autogenerate: { directory: 'contributing' },
 				},
 			],
 		}),

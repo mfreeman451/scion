@@ -37,5 +37,12 @@ Scion is designed to be easy to start with.
 
 Scion follows a Manager-Worker architecture:
 
+```d2
+User -> Scion CLI: Start Agent
+Scion CLI -> Runtime Host: Provision Container
+Runtime Host -> Agent Container: Execute Task
+Agent Container -> Scion CLI: Progress Updates
+```
+
 - **scion**: A host-side CLI that orchestrates the lifecycle of agents. It manages the "Grove" (the project workspace) and provides tools for template management (`scion templates`).
 - **Agents**: Isolated runtime containers (e.g., Docker) running the agent software (like Gemini CLI, Claude Code, or OpenAI Codex).

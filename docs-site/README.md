@@ -1,49 +1,83 @@
-# Starlight Starter Kit: Basics
+# Scion Documentation Site
 
-[![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
-
-```
-npm create astro@latest -- --template starlight
-```
-
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+This is the documentation site for [Scion](https://github.com/google/scion), built using [Starlight](https://starlight.astro.build/).
 
 ## 🚀 Project Structure
 
-Inside of your Astro + Starlight project, you'll see the following folders and files:
-
 ```
 .
-├── public/
+├── public/          # Static assets (favicons, etc.)
 ├── src/
-│   ├── assets/
+│   ├── assets/      # Images and other media
 │   ├── content/
-│   │   └── docs/
+│   │   └── docs/    # Markdown/MDX documentation files
 │   └── content.config.ts
-├── astro.config.mjs
+├── astro.config.mjs # Astro configuration
 ├── package.json
 └── tsconfig.json
 ```
 
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
+## 🛠 Prerequisites
 
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
+This site uses **D2** for diagrams via the `astro-d2` integration. To build the site locally with diagrams, you must have the `d2` CLI installed.
 
-Static assets, like favicons, can be placed in the `public/` directory.
+### Installing D2
+
+```bash
+curl -fsSL https://d2lang.com/install.sh | sh -s --
+```
 
 ## 🧞 Commands
 
-All commands are run from the root of the project, from a terminal:
+All commands are run from the `docs-site` directory:
 
 | Command                   | Action                                           |
 | :------------------------ | :----------------------------------------------- |
 | `npm install`             | Installs dependencies                            |
 | `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
+| `npm run build`           | Build the production site to `./dist/`           |
+| `npm run preview`         | Preview the build locally                        |
 | `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
 
-## 👀 Want to learn more?
+## 🚢 Deployment
 
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+The documentation site is containerized and can be deployed to Google Cloud Run.
+
+### Local Container Build
+
+To build and run the container locally:
+
+```bash
+# From the docs-site directory
+docker build -t scion-docs .
+docker run -p 8080:8080 scion-docs
+```
+
+### Cloud Build & Cloud Run
+
+To build and deploy using Google Cloud Build:
+
+```bash
+# From the project root
+gcloud builds submit --config docs-site/cloudbuild.yaml .
+```
+
+The Cloud Build configuration:
+- Builds the image with `docs-site/Dockerfile`.
+- Pushes the image to Artifact Registry.
+- Deploys the image to a Cloud Run service named `scion-docs`.
+
+## 📝 Writing Documentation
+
+Documentation is written in Markdown (`.md`) or MDX (`.mdx`) in the `src/content/docs/` directory.
+
+### Diagrams
+
+You can include D2 diagrams directly in your documentation using `d2` code blocks:
+
+```d2
+User -> Scion: Start Agent
+Scion -> Container: Run
+```
+
+The diagrams will be automatically rendered as SVGs during the build process.

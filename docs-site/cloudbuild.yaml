@@ -1,0 +1,53 @@
+# Cloud Build configuration for Scion Documentation Site
+steps:
+  # 1. Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-docs-image'
+    args:
+      - 'build'
+      - '-t'
+      - '$_REGISTRY/docs-site:$SHORT_SHA'
+      - '-t'
+      - '$_REGISTRY/docs-site:latest'
+      - '-f'
+      - 'Dockerfile'
+      - '.'
+    dir: 'docs-site'
+
+  # 2. Push the container image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-docs-image-sha'
+    args:
+      - 'push'
+      - '$_REGISTRY/docs-site:$SHORT_SHA'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-docs-image-latest'
+    args:
+      - 'push'
+      - '$_REGISTRY/docs-site:latest'
+
+  # 3. Deploy container image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-to-cloud-run'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '$_SERVICE_NAME'
+      - '--image'
+      - '$_REGISTRY/docs-site:$SHORT_SHA'
+      - '--region'
+      - '$_REGION'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+
+substitutions:
+  _REGISTRY: 'us-central1-docker.pkg.dev/${PROJECT_ID}/public-docker'
+  _SERVICE_NAME: 'scion-docs'
+  _REGION: 'us-central1'
+
+options:
+  dynamicSubstitutions: true
+  machineType: 'E2_HIGHCPU_8' # Use a larger machine for faster builds
