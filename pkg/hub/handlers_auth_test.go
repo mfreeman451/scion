@@ -177,3 +177,135 @@ func TestAuthValidate(t *testing.T) {
 		t.Error("expected token to be invalid")
 	}
 }
+
+func TestAuthToken(t *testing.T) {
+	srv, _ := testServer(t)
+
+	// 1. Missing required fields - code
+	body1 := AuthTokenRequest{
+		RedirectURI: "http://localhost:8080/callback",
+		GrantType:   "authorization_code",
+		Provider:    "google",
+	}
+	rec1 := doRequestNoAuth(t, srv, http.MethodPost, "/api/v1/auth/token", body1)
+	if rec1.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for missing code, got %d: %s", rec1.Code, rec1.Body.String())
+	}
+
+	// 2. Missing required fields - redirectUri
+	body2 := AuthTokenRequest{
+		Code:      "test-code",
+		GrantType: "authorization_code",
+		Provider:  "google",
+	}
+	rec2 := doRequestNoAuth(t, srv, http.MethodPost, "/api/v1/auth/token", body2)
+	if rec2.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for missing redirectUri, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+
+	// 3. Missing required fields - grantType
+	body3 := AuthTokenRequest{
+		Code:        "test-code",
+		RedirectURI: "http://localhost:8080/callback",
+		Provider:    "google",
+	}
+	rec3 := doRequestNoAuth(t, srv, http.MethodPost, "/api/v1/auth/token", body3)
+	if rec3.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for missing grantType, got %d: %s", rec3.Code, rec3.Body.String())
+	}
+
+	// 4. Invalid grant type
+	body4 := AuthTokenRequest{
+		Code:        "test-code",
+		RedirectURI: "http://localhost:8080/callback",
+		GrantType:   "client_credentials",
+		Provider:    "google",
+	}
+	rec4 := doRequestNoAuth(t, srv, http.MethodPost, "/api/v1/auth/token", body4)
+	if rec4.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for unsupported grant type, got %d: %s", rec4.Code, rec4.Body.String())
+	}
+	// Verify error message
+	var errResp4 struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(rec4.Body).Decode(&errResp4); err == nil {
+		if errResp4.Message != "unsupported grant type" {
+			t.Errorf("expected 'unsupported grant type' message, got %q", errResp4.Message)
+		}
+	}
+
+	// 5. Invalid provider
+	body5 := AuthTokenRequest{
+		Code:        "test-code",
+		RedirectURI: "http://localhost:8080/callback",
+		GrantType:   "authorization_code",
+		Provider:    "facebook", // not supported
+	}
+	rec5 := doRequestNoAuth(t, srv, http.MethodPost, "/api/v1/auth/token", body5)
+	if rec5.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 for invalid provider, got %d: %s", rec5.Code, rec5.Body.String())
+	}
+	// Verify error code
+	var errResp5 struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(rec5.Body).Decode(&errResp5); err == nil {
+		if errResp5.Error != "invalid_provider" {
+			t.Errorf("expected 'invalid_provider' error code, got %q", errResp5.Error)
+		}
+	}
+
+	// 6. OAuth service not configured (default test server has no OAuth)
+	body6 := AuthTokenRequest{
+		Code:        "test-code",
+		RedirectURI: "http://localhost:8080/callback",
+		GrantType:   "authorization_code",
+		Provider:    "google",
+	}
+	rec6 := doRequestNoAuth(t, srv, http.MethodPost, "/api/v1/auth/token", body6)
+	if rec6.Code != http.StatusNotImplemented {
+		t.Errorf("expected status 501 when OAuth not configured, got %d: %s", rec6.Code, rec6.Body.String())
+	}
+	// Verify error code
+	var errResp6 struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(rec6.Body).Decode(&errResp6); err == nil {
+		if errResp6.Error != "not_implemented" {
+			t.Errorf("expected 'not_implemented' error code, got %q", errResp6.Error)
+		}
+	}
+}
+
+func TestAuthTokenProviderInference(t *testing.T) {
+	srv, _ := testServer(t)
+
+	// Test provider inference from redirect URI containing "github"
+	body := AuthTokenRequest{
+		Code:        "test-code",
+		RedirectURI: "http://localhost:8080/auth/callback/github",
+		GrantType:   "authorization_code",
+		// Provider not specified - should be inferred as "github"
+	}
+	rec := doRequestNoAuth(t, srv, http.MethodPost, "/api/v1/auth/token", body)
+
+	// Should fail with "not_implemented" because OAuth is not configured,
+	// but importantly, it should NOT fail with "invalid_provider"
+	// This confirms the provider was correctly inferred as "github"
+	if rec.Code != http.StatusNotImplemented {
+		t.Errorf("expected status 501 (OAuth not configured), got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var errResp struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&errResp); err == nil {
+		if errResp.Error == "invalid_provider" {
+			t.Error("provider should have been inferred as 'github', but got 'invalid_provider' error")
+		}
+	}
+}

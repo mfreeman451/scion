@@ -272,6 +272,14 @@ func (s *Server) handleAuthToken(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(req.RedirectURI, "github") {
 			provider = "github"
 		}
+		log.Printf("[Auth] Provider not specified in request, inferred as %q from redirect URI", provider)
+	}
+
+	// Validate provider is a known value
+	if provider != "google" && provider != "github" {
+		writeError(w, http.StatusBadRequest, "invalid_provider",
+			"unsupported OAuth provider", nil)
+		return
 	}
 
 	// Map client type string to internal type
@@ -293,8 +301,9 @@ func (s *Server) handleAuthToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userInfo, err := s.oauthService.ExchangeCodeForClient(ctx, oauthClientType, provider, req.Code, req.RedirectURI)
 	if err != nil {
+		log.Printf("[Auth] OAuth code exchange failed for provider %s: %v", provider, err)
 		writeError(w, http.StatusBadRequest, "oauth_error",
-			"failed to exchange authorization code: "+err.Error(), nil)
+			"failed to exchange authorization code", nil)
 		return
 	}
 
@@ -694,8 +703,9 @@ func (s *Server) handleCLIAuthToken(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userInfo, err := s.oauthService.ExchangeCodeForClient(ctx, OAuthClientTypeCLI, provider, req.Code, req.CallbackURL)
 	if err != nil {
+		log.Printf("[Auth] CLI OAuth code exchange failed for provider %s: %v", provider, err)
 		writeError(w, http.StatusBadRequest, "oauth_error",
-			"failed to exchange authorization code: "+err.Error(), nil)
+			"failed to exchange authorization code", nil)
 		return
 	}
 
