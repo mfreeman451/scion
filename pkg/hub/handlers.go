@@ -629,7 +629,8 @@ type RegisterGroveRequest struct {
 	Name      string            `json:"name"`
 	GitRemote string            `json:"gitRemote"`
 	Path      string            `json:"path,omitempty"`
-	Host      *RegisterHostInfo `json:"host,omitempty"`
+	HostID    string            `json:"hostId,omitempty"`   // Link to existing host (two-phase flow)
+	Host      *RegisterHostInfo `json:"host,omitempty"`     // DEPRECATED: Use HostID with two-phase registration
 	Profiles  []string          `json:"profiles,omitempty"`
 	Mode      string            `json:"mode,omitempty"`
 	Labels    map[string]string `json:"labels,omitempty"`
@@ -647,8 +648,20 @@ type RegisterGroveResponse struct {
 	Grove     *store.Grove       `json:"grove"`
 	Host      *store.RuntimeHost `json:"host,omitempty"`
 	Created   bool               `json:"created"`
-	HostToken string             `json:"hostToken,omitempty"` // Deprecated: use SecretKey
-	SecretKey string             `json:"secretKey,omitempty"` // Base64-encoded HMAC secret
+	HostToken string             `json:"hostToken,omitempty"` // DEPRECATED: use two-phase registration
+	SecretKey string             `json:"secretKey,omitempty"` // DEPRECATED: secrets only from /hosts/join
+}
+
+// AddContributorRequest is the request for adding a host as a grove contributor.
+type AddContributorRequest struct {
+	HostID    string `json:"hostId"`
+	LocalPath string `json:"localPath,omitempty"`
+	Mode      string `json:"mode,omitempty"` // "connected" or "read-only"
+}
+
+// AddContributorResponse is the response after adding a contributor.
+type AddContributorResponse struct {
+	Contributor *store.GroveContributor `json:"contributor"`
 }
 
 func (s *Server) handleGroves(w http.ResponseWriter, r *http.Request) {
@@ -816,11 +829,57 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 		created = true
 	}
 
-	// Handle host registration if provided
+	// Handle host linking - two paths:
+	// 1. New flow (preferred): HostID provided - link to existing host (no secret generation)
+	// 2. Deprecated flow: Host object provided - create/update host AND generate secret
 	var host *store.RuntimeHost
 	var hostToken string
+	var secretKey string
 
-	if req.Host != nil {
+	if req.HostID != "" {
+		// NEW FLOW: Link to existing host registered via two-phase /hosts + /hosts/join
+		existingHost, err := s.store.GetRuntimeHost(ctx, req.HostID)
+		if err != nil {
+			if err == store.ErrNotFound {
+				ValidationError(w, "hostId not found: host must be registered via POST /hosts and /hosts/join first", map[string]interface{}{
+					"field":  "hostId",
+					"hostId": req.HostID,
+				})
+				return
+			}
+			writeErrorFromErr(w, err, "")
+			return
+		}
+		host = existingHost
+
+		// Add as grove contributor
+		contrib := &store.GroveContributor{
+			GroveID:   grove.ID,
+			HostID:    host.ID,
+			HostName:  host.Name,
+			LocalPath: req.Path,
+			Mode:      host.Mode,
+			Status:    host.Status,
+		}
+
+		if err := s.store.AddGroveContributor(ctx, contrib); err != nil {
+			writeErrorFromErr(w, err, "")
+			return
+		}
+
+		// Set as default runtime host if grove doesn't have one
+		if grove.DefaultRuntimeHostID == "" {
+			grove.DefaultRuntimeHostID = host.ID
+			if err := s.store.UpdateGrove(ctx, grove); err != nil {
+				util.Debugf("Warning: failed to set default runtime host: %v", err)
+			}
+		}
+
+		// No secret returned - host already has credentials from /hosts/join
+	} else if req.Host != nil {
+		// DEPRECATED FLOW: Embedded host registration (creates host and generates secret)
+		util.Debugf("Warning: embedded Host field in grove registration is deprecated. Use two-phase registration: POST /hosts + POST /hosts/join, then pass hostId")
+
 		hostID := req.Host.ID
 
 		// Try to find existing host by ID first, then by name
@@ -912,27 +971,20 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 			grove.DefaultRuntimeHostID = host.ID
 			if err := s.store.UpdateGrove(ctx, grove); err != nil {
 				// Log but don't fail - the host is registered, default can be set later
-				// In production, log this error
+				util.Debugf("Warning: failed to set default runtime host: %v", err)
 			}
 		}
 
 		// Generate HMAC credentials for the host if host auth service is available
+		// (deprecated flow only - new flow gets secrets from /hosts/join)
 		if s.hostAuthService != nil {
-			secretKey, err := s.hostAuthService.GenerateAndStoreSecret(ctx, host.ID)
+			var err error
+			secretKey, err = s.hostAuthService.GenerateAndStoreSecret(ctx, host.ID)
 			if err != nil {
 				// Log but don't fail - host is registered, can complete join later
 				util.Debugf("Warning: failed to generate host secret: %v", err)
 				// Fall back to simple token for backward compatibility
 				hostToken = "host_" + api.NewShortID() + "_" + api.NewShortID()
-			} else {
-				// Return the secret key (base64-encoded)
-				writeJSON(w, http.StatusOK, RegisterGroveResponse{
-					Grove:     grove,
-					Host:      host,
-					Created:   created,
-					SecretKey: secretKey,
-				})
-				return
 			}
 		} else {
 			// No host auth service - use simple token
@@ -945,6 +997,7 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 		Host:      host,
 		Created:   created,
 		HostToken: hostToken,
+		SecretKey: secretKey,
 	})
 }
 
@@ -1005,6 +1058,14 @@ func (s *Server) handleGroveRoutes(w http.ResponseWriter, r *http.Request) {
 		} else {
 			s.handleGroveSecretByKey(w, r, groveID, secretPath)
 		}
+		return
+	}
+
+	// Check for nested /contributors path
+	if strings.HasPrefix(subPath, "contributors") {
+		contribPath := strings.TrimPrefix(subPath, "contributors")
+		contribPath = strings.TrimPrefix(contribPath, "/")
+		s.handleGroveContributors(w, r, groveID, contribPath)
 		return
 	}
 
@@ -2690,6 +2751,141 @@ func (s *Server) handleGroveSecretByKey(w http.ResponseWriter, r *http.Request, 
 	default:
 		MethodNotAllowed(w)
 	}
+}
+
+// ============================================================================
+// Grove Contributors Endpoints
+// ============================================================================
+
+// handleGroveContributors handles contributor operations for a grove.
+// Path: /api/v1/groves/{groveId}/contributors[/{hostId}]
+func (s *Server) handleGroveContributors(w http.ResponseWriter, r *http.Request, groveID, subPath string) {
+	ctx := r.Context()
+
+	// Verify grove exists
+	_, err := s.store.GetGrove(ctx, groveID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			NotFound(w, "Grove")
+			return
+		}
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	// No subpath - collection endpoint
+	if subPath == "" {
+		switch r.Method {
+		case http.MethodGet:
+			s.listGroveContributors(w, r, groveID)
+		case http.MethodPost:
+			s.addGroveContributor(w, r, groveID)
+		default:
+			MethodNotAllowed(w)
+		}
+		return
+	}
+
+	// subPath is the hostId - resource endpoint
+	hostID := subPath
+	switch r.Method {
+	case http.MethodDelete:
+		s.removeGroveContributor(w, r, groveID, hostID)
+	default:
+		MethodNotAllowed(w)
+	}
+}
+
+// listGroveContributors returns all contributors for a grove.
+func (s *Server) listGroveContributors(w http.ResponseWriter, r *http.Request, groveID string) {
+	ctx := r.Context()
+
+	contributors, err := s.store.GetGroveContributors(ctx, groveID)
+	if err != nil {
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"contributors": contributors,
+	})
+}
+
+// addGroveContributor adds a host as a contributor to a grove.
+func (s *Server) addGroveContributor(w http.ResponseWriter, r *http.Request, groveID string) {
+	ctx := r.Context()
+
+	var req AddContributorRequest
+	if err := readJSON(r, &req); err != nil {
+		BadRequest(w, "Invalid request body: "+err.Error())
+		return
+	}
+
+	if req.HostID == "" {
+		ValidationError(w, "hostId is required", nil)
+		return
+	}
+
+	// Verify host exists
+	host, err := s.store.GetRuntimeHost(ctx, req.HostID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			ValidationError(w, "hostId not found", map[string]interface{}{
+				"field":  "hostId",
+				"hostId": req.HostID,
+			})
+			return
+		}
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	// Determine mode
+	mode := req.Mode
+	if mode == "" {
+		mode = host.Mode
+	}
+	if mode == "" {
+		mode = store.HostModeConnected
+	}
+
+	// Create contributor record
+	contrib := &store.GroveContributor{
+		GroveID:   groveID,
+		HostID:    host.ID,
+		HostName:  host.Name,
+		LocalPath: req.LocalPath,
+		Mode:      mode,
+		Status:    host.Status,
+	}
+
+	if err := s.store.AddGroveContributor(ctx, contrib); err != nil {
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	// Get the grove to check if we should set default runtime host
+	grove, err := s.store.GetGrove(ctx, groveID)
+	if err == nil && grove.DefaultRuntimeHostID == "" {
+		grove.DefaultRuntimeHostID = host.ID
+		_ = s.store.UpdateGrove(ctx, grove)
+	}
+
+	writeJSON(w, http.StatusCreated, AddContributorResponse{
+		Contributor: contrib,
+	})
+}
+
+// removeGroveContributor removes a host from a grove's contributors.
+func (s *Server) removeGroveContributor(w http.ResponseWriter, r *http.Request, groveID, hostID string) {
+	ctx := r.Context()
+
+	if err := s.store.RemoveGroveContributor(ctx, groveID, hostID); err != nil {
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ============================================================================

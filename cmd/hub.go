@@ -11,10 +11,8 @@ import (
 	"github.com/ptone/scion-agent/pkg/apiclient"
 	"github.com/ptone/scion-agent/pkg/config"
 	"github.com/ptone/scion-agent/pkg/credentials"
-	"github.com/ptone/scion-agent/pkg/harness"
 	"github.com/ptone/scion-agent/pkg/hostcredentials"
 	"github.com/ptone/scion-agent/pkg/hubclient"
-	"github.com/ptone/scion-agent/pkg/runtime"
 	"github.com/ptone/scion-agent/pkg/util"
 	"github.com/ptone/scion-agent/pkg/version"
 	"github.com/spf13/cobra"
@@ -438,6 +436,8 @@ func runHubRegister(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	endpoint := GetHubEndpoint(settings)
+
 	// Get grove info
 	var groveName string
 	var gitRemote string
@@ -474,58 +474,98 @@ func runHubRegister(cmd *cobra.Command, args []string) error {
 		hostName = "local-host"
 	}
 
-	// Detect runtime
-	rt := runtime.GetRuntime("", "")
-	runtimeType := "docker"
-	if rt != nil {
-		runtimeType = rt.Name()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// ==== TWO-PHASE HOST REGISTRATION ====
+	// Phase 1: Check for existing host credentials or create new host
+	// Phase 2: Complete host join to get HMAC secret
+	// Phase 3: Register grove with host ID
+
+	credStore := hostcredentials.NewStore("")
+	existingCreds, credErr := credStore.Load()
+
+	var hostID string
+	var needsJoin bool
+
+	// Check if we already have valid credentials
+	if credErr == nil && existingCreds != nil && existingCreds.HostID != "" && !hubForceRegister {
+		// Existing credentials found - verify they're still valid
+		hostID = existingCreds.HostID
+		fmt.Printf("Using existing host credentials (hostId: %s)\n", hostID)
+
+		// Verify the host still exists on the hub
+		_, err := client.RuntimeHosts().Get(ctx, hostID)
+		if err != nil {
+			fmt.Printf("Warning: existing host not found on Hub, will re-register\n")
+			hostID = ""
+			needsJoin = true
+		}
+	} else {
+		needsJoin = true
 	}
 
-	// Get supported harnesses
-	allHarnesses := harness.All()
-	supportedHarnesses := make([]string, 0, len(allHarnesses))
-	for _, h := range allHarnesses {
-		supportedHarnesses = append(supportedHarnesses, h.Name())
+	// Phase 1 & 2: Create host and complete join if needed
+	if needsJoin || hostID == "" {
+		fmt.Printf("Registering host with Hub...\n")
+
+		// Phase 1: Create host registration
+		createReq := &hubclient.CreateHostRequest{
+			Name: hostName,
+			Capabilities: []string{
+				"sync",
+				"attach",
+			},
+		}
+
+		createResp, err := client.RuntimeHosts().Create(ctx, createReq)
+		if err != nil {
+			return fmt.Errorf("failed to create host registration: %w", err)
+		}
+
+		fmt.Printf("Host created (ID: %s), completing join...\n", createResp.HostID)
+
+		// Phase 2: Complete host join with join token
+		joinReq := &hubclient.JoinHostRequest{
+			HostID:    createResp.HostID,
+			JoinToken: createResp.JoinToken,
+			Hostname:  hostName,
+			Version:   version.Version,
+			Capabilities: []string{
+				"sync",
+				"attach",
+			},
+		}
+
+		joinResp, err := client.RuntimeHosts().Join(ctx, joinReq)
+		if err != nil {
+			return fmt.Errorf("failed to complete host join: %w", err)
+		}
+
+		hostID = joinResp.HostID
+
+		// Save credentials
+		if err := credStore.SaveFromJoinResponse(hostID, joinResp.SecretKey, endpoint); err != nil {
+			fmt.Printf("Warning: failed to save host credentials: %v\n", err)
+		} else {
+			fmt.Printf("Host credentials saved to %s\n", credStore.Path())
+		}
 	}
 
-	// Get existing host ID if available
-	var existingHostID string
-	if settings.Hub != nil {
-		existingHostID = settings.Hub.HostID
-	}
-
-	// Build registration request
+	// Phase 3: Register grove with host ID link
 	req := &hubclient.RegisterGroveRequest{
 		ID:        groveID,
 		Name:      groveName,
 		GitRemote: util.NormalizeGitRemote(gitRemote),
 		Path:      resolvedPath,
+		HostID:    hostID, // Link to the registered host
 		Mode:      hubRegisterMode,
-		Host: &hubclient.HostInfo{
-			ID:      existingHostID, // May be empty
-			Name:    hostName,
-			Version: version.Version,
-			Capabilities: &hubclient.HostCapabilities{
-				WebPTY: false, // Not implemented yet
-				Sync:   true,
-				Attach: true,
-			},
-			Profiles: []hubclient.HostProfile{
-				{Name: "default", Type: runtimeType, Available: true},
-			},
-		},
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
 	resp, err := client.Groves().Register(ctx, req)
 	if err != nil {
-		return fmt.Errorf("registration failed: %w", err)
+		return fmt.Errorf("grove registration failed: %w", err)
 	}
-
-	// Note: grove_id is now a client-generated top-level setting saved during init.
-	// We no longer save hub.groveId here as it's redundant with grove_id.
 
 	// Save hub settings to GLOBAL settings since registration is a host-level operation.
 	// The RuntimeHost server reads from global settings to know which Hub to connect to.
@@ -534,36 +574,15 @@ func runHubRegister(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Warning: failed to get global directory: %v\n", err)
 	} else {
 		// Save the hub endpoint so RuntimeHost knows where to connect
-		endpoint := GetHubEndpoint(settings)
 		if endpoint != "" {
 			if err := config.UpdateSetting(globalDir, "hub.endpoint", endpoint, true); err != nil {
 				fmt.Printf("Warning: failed to save hub endpoint to global settings: %v\n", err)
 			}
 		}
 
-		// Save the host ID to global settings (for backward compatibility)
-		if resp.Host != nil && resp.Host.ID != "" {
-			if err := config.UpdateSetting(globalDir, "hub.hostId", resp.Host.ID, true); err != nil {
-				fmt.Printf("Warning: failed to save host ID: %v\n", err)
-			}
-		}
-	}
-
-	// Save HMAC credentials to host-credentials.json for RuntimeHost authentication
-	endpoint := GetHubEndpoint(settings)
-	if resp.SecretKey != "" && resp.Host != nil {
-		credStore := hostcredentials.NewStore("")
-		if err := credStore.SaveFromJoinResponse(resp.Host.ID, resp.SecretKey, endpoint); err != nil {
-			fmt.Printf("Warning: failed to save host credentials: %v\n", err)
-		} else {
-			fmt.Printf("Host credentials saved to %s\n", credStore.Path())
-		}
-	} else if resp.HostToken != "" {
-		// Fall back to saving old-style token (for backward compatibility with older Hub versions)
-		if globalDir != "" {
-			if err := config.UpdateSetting(globalDir, "hub.hostToken", resp.HostToken, true); err != nil {
-				fmt.Printf("Warning: failed to save host token: %v\n", err)
-			}
+		// Save the host ID to global settings
+		if err := config.UpdateSetting(globalDir, "hub.hostId", hostID, true); err != nil {
+			fmt.Printf("Warning: failed to save host ID: %v\n", err)
 		}
 	}
 
@@ -578,7 +597,12 @@ func runHubRegister(cmd *cobra.Command, args []string) error {
 			}
 		}
 	}
-	fmt.Printf("Host registered: %s (ID: %s)\n", resp.Host.Name, resp.Host.ID)
+
+	if resp.Host != nil {
+		fmt.Printf("Host registered: %s (ID: %s)\n", resp.Host.Name, resp.Host.ID)
+	} else {
+		fmt.Printf("Host linked: %s\n", hostID)
+	}
 
 	return nil
 }

@@ -34,6 +34,9 @@ type GroveService interface {
 	// ListContributors returns runtime hosts contributing to a grove.
 	ListContributors(ctx context.Context, groveID string) (*ListContributorsResponse, error)
 
+	// AddContributor adds a host as a contributor to a grove.
+	AddContributor(ctx context.Context, groveID string, req *AddContributorRequest) (*AddContributorResponse, error)
+
 	// RemoveContributor removes a host from a grove.
 	RemoveContributor(ctx context.Context, groveID, hostID string) error
 
@@ -73,13 +76,14 @@ type ListGrovesResponse struct {
 
 // RegisterGroveRequest is the request for registering a grove.
 type RegisterGroveRequest struct {
-	ID        string            `json:"id,omitempty"`  // Client-provided grove ID (from grove_id setting)
+	ID        string            `json:"id,omitempty"`      // Client-provided grove ID (from grove_id setting)
 	Name      string            `json:"name"`
 	GitRemote string            `json:"gitRemote"`
-	Path      string            `json:"path"`
-	Host      *HostInfo         `json:"host"`
+	Path      string            `json:"path,omitempty"`
+	HostID    string            `json:"hostId,omitempty"`  // Link to existing host (two-phase flow)
+	Host      *HostInfo         `json:"host,omitempty"`    // DEPRECATED: Use HostID with two-phase registration
 	Profiles  []string          `json:"profiles,omitempty"`
-	Mode      string            `json:"mode"` // connected, read-only
+	Mode      string            `json:"mode,omitempty"`    // connected, read-only
 	Labels    map[string]string `json:"labels,omitempty"`
 }
 
@@ -95,10 +99,10 @@ type HostInfo struct {
 // RegisterGroveResponse is the response from registering a grove.
 type RegisterGroveResponse struct {
 	Grove     *Grove       `json:"grove"`
-	Host      *RuntimeHost `json:"host"`
-	Created   bool         `json:"created"`   // True if grove was newly created
-	HostToken string       `json:"hostToken"` // Deprecated: use SecretKey
-	SecretKey string       `json:"secretKey"` // Base64-encoded HMAC secret
+	Host      *RuntimeHost `json:"host,omitempty"` // Populated if hostId or host provided
+	Created   bool         `json:"created"`        // True if grove was newly created
+	HostToken string       `json:"hostToken,omitempty"` // DEPRECATED: use two-phase registration
+	SecretKey string       `json:"secretKey,omitempty"` // DEPRECATED: secrets only from /hosts/join
 }
 
 // CreateGroveRequest is the request for creating a grove without a host.
@@ -120,6 +124,18 @@ type UpdateGroveRequest struct {
 // ListContributorsResponse is the response from listing grove contributors.
 type ListContributorsResponse struct {
 	Contributors []GroveContributor `json:"contributors"`
+}
+
+// AddContributorRequest is the request for adding a host as a grove contributor.
+type AddContributorRequest struct {
+	HostID    string `json:"hostId"`
+	LocalPath string `json:"localPath,omitempty"`
+	Mode      string `json:"mode,omitempty"` // "connected" or "read-only"
+}
+
+// AddContributorResponse is the response after adding a contributor.
+type AddContributorResponse struct {
+	Contributor *GroveContributor `json:"contributor"`
 }
 
 // List returns groves matching the filter criteria.
@@ -266,6 +282,15 @@ func (s *groveService) ListContributors(ctx context.Context, groveID string) (*L
 		return nil, err
 	}
 	return apiclient.DecodeResponse[ListContributorsResponse](resp)
+}
+
+// AddContributor adds a host as a contributor to a grove.
+func (s *groveService) AddContributor(ctx context.Context, groveID string, req *AddContributorRequest) (*AddContributorResponse, error) {
+	resp, err := s.c.transport.Post(ctx, "/api/v1/groves/"+groveID+"/contributors", req, nil)
+	if err != nil {
+		return nil, err
+	}
+	return apiclient.DecodeResponse[AddContributorResponse](resp)
 }
 
 // RemoveContributor removes a host from a grove.

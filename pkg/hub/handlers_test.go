@@ -593,6 +593,227 @@ func TestGroveRegisterHostDeduplication(t *testing.T) {
 	}
 }
 
+func TestGroveRegisterWithHostID(t *testing.T) {
+	srv, s := testServer(t)
+	ctx := context.Background()
+
+	// First, create a host directly (simulating Phase 1 + 2 of two-phase flow)
+	host := &store.RuntimeHost{
+		ID:     "host_twophase_test",
+		Name:   "Two Phase Test Host",
+		Slug:   "two-phase-test-host",
+		Mode:   store.HostModeConnected,
+		Status: store.HostStatusOnline,
+	}
+	if err := s.CreateRuntimeHost(ctx, host); err != nil {
+		t.Fatalf("failed to create runtime host: %v", err)
+	}
+
+	// Now register grove with hostId (Phase 3)
+	body := map[string]interface{}{
+		"name":      "Two Phase Grove",
+		"gitRemote": "https://github.com/test/twophase-grove",
+		"hostId":    host.ID,
+		"path":      "/path/to/project/.scion",
+	}
+
+	rec := doRequest(t, srv, http.MethodPost, "/api/v1/groves/register", body)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp RegisterGroveResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.Grove.ID == "" {
+		t.Error("expected grove ID to be set")
+	}
+
+	if !resp.Created {
+		t.Error("expected created to be true for new grove")
+	}
+
+	// Host should be populated in response
+	if resp.Host == nil {
+		t.Error("expected host to be set in response")
+	} else if resp.Host.ID != host.ID {
+		t.Errorf("expected host ID %q, got %q", host.ID, resp.Host.ID)
+	}
+
+	// Should NOT have secretKey (two-phase flow doesn't generate secrets in grove registration)
+	if resp.SecretKey != "" {
+		t.Error("expected secretKey to be empty in new two-phase flow")
+	}
+
+	// Verify contributor was created
+	contributors, err := s.GetGroveContributors(ctx, resp.Grove.ID)
+	if err != nil {
+		t.Fatalf("failed to get contributors: %v", err)
+	}
+	if len(contributors) != 1 {
+		t.Errorf("expected 1 contributor, got %d", len(contributors))
+	}
+	if contributors[0].HostID != host.ID {
+		t.Errorf("expected contributor host ID %q, got %q", host.ID, contributors[0].HostID)
+	}
+	if contributors[0].LocalPath != "/path/to/project/.scion" {
+		t.Errorf("expected localPath '/path/to/project/.scion', got %q", contributors[0].LocalPath)
+	}
+}
+
+func TestGroveRegisterWithInvalidHostID(t *testing.T) {
+	srv, _ := testServer(t)
+
+	// Try to register grove with non-existent hostId
+	body := map[string]interface{}{
+		"name":      "Invalid Host Grove",
+		"gitRemote": "https://github.com/test/invalid-host-grove",
+		"hostId":    "non-existent-host-id",
+	}
+
+	rec := doRequest(t, srv, http.MethodPost, "/api/v1/groves/register", body)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400 (validation error), got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var errResp ErrorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+
+	if errResp.Error.Code != ErrCodeValidationError {
+		t.Errorf("expected error code %q, got %q", ErrCodeValidationError, errResp.Error.Code)
+	}
+}
+
+func TestAddContributor(t *testing.T) {
+	srv, s := testServer(t)
+	ctx := context.Background()
+
+	// Create a grove
+	grove := &store.Grove{
+		ID:        "grove_contrib_test",
+		Slug:      "contrib-test",
+		Name:      "Contributor Test Grove",
+		GitRemote: "https://github.com/test/contrib-test",
+		Created:   time.Now(),
+		Updated:   time.Now(),
+	}
+	if err := s.CreateGrove(ctx, grove); err != nil {
+		t.Fatalf("failed to create grove: %v", err)
+	}
+
+	// Create a host
+	host := &store.RuntimeHost{
+		ID:     "host_contrib_test",
+		Name:   "Contributor Test Host",
+		Slug:   "contrib-test-host",
+		Mode:   store.HostModeConnected,
+		Status: store.HostStatusOnline,
+	}
+	if err := s.CreateRuntimeHost(ctx, host); err != nil {
+		t.Fatalf("failed to create runtime host: %v", err)
+	}
+
+	// Add contributor via API
+	body := map[string]interface{}{
+		"hostId":    host.ID,
+		"localPath": "/home/user/project/.scion",
+		"mode":      "connected",
+	}
+
+	rec := doRequest(t, srv, http.MethodPost, "/api/v1/groves/"+grove.ID+"/contributors", body)
+	if rec.Code != http.StatusCreated {
+		t.Errorf("expected status 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp AddContributorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.Contributor == nil {
+		t.Fatal("expected contributor in response")
+	}
+	if resp.Contributor.HostID != host.ID {
+		t.Errorf("expected host ID %q, got %q", host.ID, resp.Contributor.HostID)
+	}
+	if resp.Contributor.LocalPath != "/home/user/project/.scion" {
+		t.Errorf("expected localPath, got %q", resp.Contributor.LocalPath)
+	}
+
+	// Verify grove now has default runtime host set
+	updatedGrove, err := s.GetGrove(ctx, grove.ID)
+	if err != nil {
+		t.Fatalf("failed to get updated grove: %v", err)
+	}
+	if updatedGrove.DefaultRuntimeHostID != host.ID {
+		t.Errorf("expected default runtime host to be set to %q, got %q", host.ID, updatedGrove.DefaultRuntimeHostID)
+	}
+}
+
+func TestListContributors(t *testing.T) {
+	srv, s := testServer(t)
+	ctx := context.Background()
+
+	// Create a grove
+	grove := &store.Grove{
+		ID:      "grove_list_contrib",
+		Slug:    "list-contrib",
+		Name:    "List Contributors Grove",
+		Created: time.Now(),
+		Updated: time.Now(),
+	}
+	if err := s.CreateGrove(ctx, grove); err != nil {
+		t.Fatalf("failed to create grove: %v", err)
+	}
+
+	// Create and add a host as contributor
+	host := &store.RuntimeHost{
+		ID:     "host_list_contrib",
+		Name:   "List Contributors Host",
+		Slug:   "list-contrib-host",
+		Mode:   store.HostModeConnected,
+		Status: store.HostStatusOnline,
+	}
+	if err := s.CreateRuntimeHost(ctx, host); err != nil {
+		t.Fatalf("failed to create runtime host: %v", err)
+	}
+
+	contrib := &store.GroveContributor{
+		GroveID:   grove.ID,
+		HostID:    host.ID,
+		HostName:  host.Name,
+		LocalPath: "/test/path",
+		Mode:      store.HostModeConnected,
+		Status:    store.HostStatusOnline,
+	}
+	if err := s.AddGroveContributor(ctx, contrib); err != nil {
+		t.Fatalf("failed to add contributor: %v", err)
+	}
+
+	// List contributors
+	rec := doRequest(t, srv, http.MethodGet, "/api/v1/groves/"+grove.ID+"/contributors", nil)
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string][]store.GroveContributor
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	contributors := resp["contributors"]
+	if len(contributors) != 1 {
+		t.Errorf("expected 1 contributor, got %d", len(contributors))
+	}
+	if contributors[0].HostID != host.ID {
+		t.Errorf("expected host ID %q, got %q", host.ID, contributors[0].HostID)
+	}
+}
+
 func TestGroveGetByID(t *testing.T) {
 	srv, s := testServer(t)
 	ctx := context.Background()
@@ -780,6 +1001,147 @@ func TestRuntimeHostListWithGroveLocalPath(t *testing.T) {
 
 	if len(resp2.Hosts) != 1 {
 		t.Errorf("expected 1 host, got %d", len(resp2.Hosts))
+	}
+}
+
+// ============================================================================
+// Two-Phase Host Registration Tests
+// ============================================================================
+
+// testServerWithHostAuth creates a test server with host auth enabled.
+func testServerWithHostAuth(t *testing.T) (*Server, store.Store) {
+	t.Helper()
+	s, err := sqlite.New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create test store: %v", err)
+	}
+
+	if err := s.Migrate(context.Background()); err != nil {
+		t.Fatalf("failed to migrate test store: %v", err)
+	}
+
+	cfg := DefaultServerConfig()
+	cfg.DevAuthToken = testDevToken
+	cfg.HostAuthConfig = DefaultHostAuthConfig()
+	srv := New(cfg, s)
+	return srv, s
+}
+
+func TestHostRegistrationTwoPhaseFlow(t *testing.T) {
+	srv, _ := testServerWithHostAuth(t)
+
+	// Phase 1: Create host registration (requires admin auth)
+	createBody := map[string]interface{}{
+		"name":         "two-phase-host",
+		"capabilities": []string{"sync", "attach"},
+	}
+
+	rec1 := doRequest(t, srv, http.MethodPost, "/api/v1/hosts", createBody)
+	if rec1.Code != http.StatusCreated {
+		t.Errorf("Phase 1: expected status 201, got %d: %s", rec1.Code, rec1.Body.String())
+	}
+
+	var createResp CreateHostRegistrationResponse
+	if err := json.NewDecoder(rec1.Body).Decode(&createResp); err != nil {
+		t.Fatalf("failed to decode create response: %v", err)
+	}
+
+	if createResp.HostID == "" {
+		t.Error("expected hostId to be set")
+	}
+	if createResp.JoinToken == "" {
+		t.Error("expected joinToken to be set")
+	}
+	if createResp.ExpiresAt.IsZero() {
+		t.Error("expected expiresAt to be set")
+	}
+
+	// Phase 2: Complete host join (unauthenticated - join token is auth)
+	joinBody := map[string]interface{}{
+		"hostId":       createResp.HostID,
+		"joinToken":    createResp.JoinToken,
+		"hostname":     "test-machine",
+		"version":      "1.0.0",
+		"capabilities": []string{"sync", "attach"},
+	}
+
+	rec2 := doRequestNoAuth(t, srv, http.MethodPost, "/api/v1/hosts/join", joinBody)
+	if rec2.Code != http.StatusOK {
+		t.Errorf("Phase 2: expected status 200, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+
+	var joinResp HostJoinResponse
+	if err := json.NewDecoder(rec2.Body).Decode(&joinResp); err != nil {
+		t.Fatalf("failed to decode join response: %v", err)
+	}
+
+	if joinResp.SecretKey == "" {
+		t.Error("expected secretKey to be set")
+	}
+	if joinResp.HostID != createResp.HostID {
+		t.Errorf("expected hostId %q, got %q", createResp.HostID, joinResp.HostID)
+	}
+
+	// Phase 3: Register grove with hostId
+	groveBody := map[string]interface{}{
+		"name":      "Two Phase Grove",
+		"gitRemote": "https://github.com/test/twophase",
+		"hostId":    joinResp.HostID,
+	}
+
+	rec3 := doRequest(t, srv, http.MethodPost, "/api/v1/groves/register", groveBody)
+	if rec3.Code != http.StatusOK {
+		t.Errorf("Phase 3: expected status 200, got %d: %s", rec3.Code, rec3.Body.String())
+	}
+
+	var groveResp RegisterGroveResponse
+	if err := json.NewDecoder(rec3.Body).Decode(&groveResp); err != nil {
+		t.Fatalf("failed to decode grove response: %v", err)
+	}
+
+	if !groveResp.Created {
+		t.Error("expected grove to be created")
+	}
+	if groveResp.Host == nil {
+		t.Error("expected host in response")
+	} else if groveResp.Host.ID != joinResp.HostID {
+		t.Errorf("expected host ID %q, got %q", joinResp.HostID, groveResp.Host.ID)
+	}
+
+	// The new flow should NOT return a secretKey from grove registration
+	if groveResp.SecretKey != "" {
+		t.Error("expected secretKey to be empty in new two-phase flow")
+	}
+}
+
+func TestHostJoinWithInvalidToken(t *testing.T) {
+	srv, _ := testServerWithHostAuth(t)
+
+	// Phase 1: Create host
+	createBody := map[string]interface{}{
+		"name": "invalid-token-host",
+	}
+
+	rec1 := doRequest(t, srv, http.MethodPost, "/api/v1/hosts", createBody)
+	if rec1.Code != http.StatusCreated {
+		t.Fatalf("failed to create host: %s", rec1.Body.String())
+	}
+
+	var createResp CreateHostRegistrationResponse
+	if err := json.NewDecoder(rec1.Body).Decode(&createResp); err != nil {
+		t.Fatalf("failed to decode create response: %v", err)
+	}
+
+	// Try to join with invalid token
+	joinBody := map[string]interface{}{
+		"hostId":    createResp.HostID,
+		"joinToken": "invalid_token",
+		"hostname":  "test-machine",
+	}
+
+	rec2 := doRequestNoAuth(t, srv, http.MethodPost, "/api/v1/hosts/join", joinBody)
+	if rec2.Code != http.StatusUnauthorized {
+		t.Errorf("expected status 401 for invalid token, got %d: %s", rec2.Code, rec2.Body.String())
 	}
 }
 
