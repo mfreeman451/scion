@@ -171,6 +171,8 @@ Each harness emits events in its native format. Sciontool's dialect parsers tran
 │  │ - CC hooks  │  │ - Settings  │  │   JSON      │      │
 │  │   events    │  │   JSON      │  │ - OTEL      │      │
 │  │             │  │ - OTEL      │  │   events    │      │
+│  │             │  │ - Session   │  │             │      │
+│  │             │  │   Files     │  │             │      │
 │  └─────────────┘  └─────────────┘  └─────────────┘      │
 │         │                │                │              │
 │         └────────────────┼────────────────┘              │
@@ -279,8 +281,6 @@ Sciontool reports to the Hub via the existing daemon heartbeat channel, extendin
     "write_file": { "calls": 4, "success": 4, "error": 0 }
   },
 
-  "cost_estimate_usd": 0.42,
-
   "languages": ["TypeScript", "Go", "Markdown"]
 }
 ```
@@ -311,7 +311,7 @@ CREATE TABLE agent_session_metrics (
     tool_calls      JSONB,  -- {"tool_name": {"calls": N, "success": N, "error": N}}
     languages       TEXT[], -- ["TypeScript", "Go"]
 
-    cost_estimate   DECIMAL(10, 6),
+    -- cost_estimate   DECIMAL(10, 6), -- Postponed to future phase
 
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -446,8 +446,6 @@ GET /api/v1/agents/{agentId}/metrics/summary
     "output": 120000,
     "cached": 300000
   },
-
-  "cost_estimate_usd": 4.20,
 
   "top_tools": [
     { "name": "read_file", "calls": 250, "success_rate": 1.0 },
@@ -618,14 +616,43 @@ Logs are emitted at several levels:
 
 Debug logging can be enabled globally or per-component via the `SCION_LOG_LEVEL=debug` environment variable.
 
-### 9.3 GCP Cloud Logging Integration
+### 9.3 OTel Log Bridge Architecture
 
-In production environments, logs are forwarded to Google Cloud Logging. To maintain a lightweight footprint, the system implements a custom `slog.Handler` that formats logs specifically for the Cloud Logging LogEntry schema. The handler will use the golang cloud logging libraries - set to simple log names of scion_hub and scion_host.
+In an OpenTelemetry-native environment, we employ a "Log Bridge" approach instead of custom log exporters. We use the official OTel bridge to connect the standard `log/slog` API to the OpenTelemetry Logs SDK.
 
-- **Schema Mapping**: Map `slog` levels to GCP `severity` levels.
-- **Metadata**: Automatically include `logging.googleapis.com/labels` and `logging.googleapis.com/sourceLocation`. Include labels for hostname for host_logs, as all hosts will write to a common logname.
-- **Trace Correlation**: If a trace context is present, include `logging.googleapis.com/trace` to link logs with traces in the Google Cloud Console.
-- **Reference**: The implementation follows the pattern established by [sloggcp](https://github.com/Permify/sloggcp).
+- **Concept**: `slog` acts as the "frontend" API that developers interact with, while the OTel SDK acts as the "backend" that handles batching, resource attribution, and exporting to the OTLP forwarder.
+- **Implementation**: We utilize the `go.opentelemetry.io/contrib/bridges/otelslog` package.
+
+#### Implementation Pattern
+
+1.  **Configure OTel LoggerProvider**: Initialize the OTel SDK with an OTLP exporter (pointing to the Collector/Backend).
+2.  **Create Bridge Handler**: Wrap the LoggerProvider in an `otelslog.Handler`.
+3.  **Set Default Logger**: Replace the global default logger or inject the bridge logger into the application context.
+
+```go
+import (
+    "context"
+    "log/slog"
+    "go.opentelemetry.io/contrib/bridges/otelslog"
+    "go.opentelemetry.io/otel/log/global"
+)
+
+func main() {
+    // 1. Setup your existing OTel LoggerProvider (which points to your forwarder)
+    lp := setupOTelLoggerProvider()
+
+    // 2. Create the slog handler using the bridge
+    // The "scion-hub" string defines the Instrumentation Scope
+    otlpHandler := otelslog.NewHandler("scion-hub", otelslog.WithLoggerProvider(lp))
+
+    // 3. Set as default
+    logger := slog.New(otlpHandler)
+    slog.SetDefault(logger)
+
+    // 4. Usage (Always use context-aware methods for trace correlation!)
+    slog.InfoContext(ctx, "processed request", "bytes", 1024)
+}
+```
 
 ### 9.4 Contextual Metadata
 
@@ -728,7 +755,7 @@ telemetry:
 
 **Impact:** Configuration and authentication will assume GCP-native identity (Workload Identity) or service account keys.
 
-### 10.2 Prompt Logging Opt-In
+### 11.2 Prompt Logging Opt-In
 
 **Decision:** Opt-in is managed at the **Grove** level by the grove administrator.
 
@@ -736,7 +763,7 @@ telemetry:
 - Configured in the Grove settings on the Hub.
 - When enabled, prompt and response logs are routed to a specific log destination (e.g., a restricted Cloud Logging bucket) to segregate sensitive content.
 
-### 10.3 Cost Estimation Accuracy
+### 11.3 Cost Estimation Accuracy
 
 **Decision:** Financial cost calculation is postponed. The system will track **token usage only** in the initial release.
 
@@ -744,7 +771,7 @@ telemetry:
 - Pricing is complex and volatile.
 - A future module may provide a price table function to convert token counts to approximate financial cost.
 
-### 10.4 Session File Watching
+### 11.4 Session File Watching
 
 **Decision:** **End-of-session parsing only** for Gemini CLI.
 
@@ -752,14 +779,14 @@ telemetry:
 - Simpler implementation than real-time file watching.
 - It is currently unclear if real-time session file parsing provides significant value over the OTel data stream.
 
-### 10.5 Multi-Model Sessions
+### 11.5 Multi-Model Sessions
 
 **Decision:** Metrics will be **broken down by model** within the session summary.
 
 **Details:**
 - The `agent_session_metrics` table and Hub API will support detailed breakdowns of token usage per model, rather than attributing everything to a single primary model.
 
-### 10.6 Cross-Agent Correlation
+### 11.6 Cross-Agent Correlation
 
 **Decision:** Postponed.
 
@@ -767,22 +794,33 @@ telemetry:
 - Initial implementation treats agents as independent.
 - Future cross-agent correlation will likely be mediated by the Hub using shared identifiers when it orchestrates multi-agent workflows.
 
-### 10.7 Retention and Archival
+### 11.7 Retention and Archival
 
 **Decision:** **Indefinite retention** of Hub-stored session summaries.
 
 **Details:**
 - The data volume for session summaries is low enough to retain indefinitely.
 - Manual purge or cleanup scripts can be developed if storage becomes an issue.
----
 
-## 12. References
+### 11.8 Credential Injection for Agents
 
-- [Normalized Metrics Research](./../metrics/metrics-data-findings.md)
-- [Codex OTel Catalog](./../metrics/codex-otel.md)
-- [Gemini CLI Metrics Extraction](./../metrics/gcli-session-core-logic.md)
-- [Gemini Custom OTel Forwarder](./../metrics/gemini-custom-otel-forwarder.md)
-- [OpenCode OTel Research](./../metrics/opencode-otel.md)
-- [Sciontool Architecture](./../sciontool-overview.md)
-- [Hosted Architecture](./hosted-architecture.md)
-- [Server Implementation](./server-implementation-design.md)
+**Decision:** **Out of Scope**.
+
+**Details:**
+- We will assume that the key libraries will be able to load via the 'application default credentials' pattern.
+- It will be up to the runtime host design to ensure these are available to the sciontool environment.
+
+### 11.9 Data Resiliency
+
+**Decision:** **Configurable Flush Interval**.
+
+**Details:**
+- The flush interval will be made a configurable option with a sane default.
+- Users who value metrics at the expense of load can choose a shorter interval to minimize data loss risk on crash.
+
+### 11.10 Stdout/Stderr Handling
+
+**Decision:** **Resolved**.
+
+**Details:**
+- This is now captured in Section 9.3 (OTel Log Bridge Architecture).
