@@ -344,13 +344,13 @@ func checkBrokerAvailability(ctx context.Context, hubCtx *HubContext) (bool, err
 	ctxTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	resp, err := hubCtx.Client.Groves().ListContributors(ctxTimeout, hubCtx.GroveID)
+	resp, err := hubCtx.Client.Groves().ListProviders(ctxTimeout, hubCtx.GroveID)
 	if err != nil {
-		return false, fmt.Errorf("failed to list grove contributors: %w", err)
+		return false, fmt.Errorf("failed to list grove providers: %w", err)
 	}
 
-	for _, contrib := range resp.Contributors {
-		if contrib.Status == "online" {
+	for _, provider := range resp.Providers {
+		if provider.Status == "online" {
 			return true, nil
 		}
 	}
@@ -444,7 +444,7 @@ func ExecuteSync(ctx context.Context, hubCtx *HubContext, result *SyncResult, au
 
 	// Register local agents on Hub
 	// Note: We don't specify a runtime broker ID - the hub will resolve it based on
-	// available grove contributors (single contributor = auto-select, multiple = error)
+	// available grove providers (single provider = auto-select, multiple = error)
 	for _, name := range result.ToRegister {
 		fmt.Printf("Registering agent '%s' on Hub...\n", name)
 		debugf("Creating agent: name=%s, groveID=%s (hub will resolve runtime broker)", name, hubCtx.GroveID)

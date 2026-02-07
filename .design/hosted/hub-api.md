@@ -118,7 +118,7 @@ Represents a project or logical grouping of agents. **Groves are the primary uni
   "labels": {"key": "value"},
   "annotations": {"key": "value"},
 
-  "contributors": [            // Runtime brokers contributing to this grove
+  "providers": [               // Runtime brokers providing services to this grove
     {
       "brokerId": "string",
       "brokerName": "string",
@@ -128,8 +128,8 @@ Represents a project or logical grouping of agents. **Groves are the primary uni
     }
   ],
 
-  "agentCount": 5,             // Total agents across all contributors (computed)
-  "activeBrokerCount": 2       // Number of online contributor brokers (computed)
+  "agentCount": 5,             // Total agents across all providers (computed)
+  "activeBrokerCount": 2       // Number of online provider brokers (computed)
 }
 ```
 
@@ -600,8 +600,8 @@ POST /api/v1/groves/register
 ```
 
 This is the **primary registration endpoint** for runtime brokers. It performs an upsert based on the git remote URL:
-- If a grove with the same git remote exists: adds the broker as a contributor
-- If no matching grove exists: creates a new grove with this broker as the initial contributor
+- If a grove with the same git remote exists: adds the broker as a provider
+- If no matching grove exists: creates a new grove with this broker as the initial provider
 
 **Request Body:**
 ```json
@@ -690,18 +690,18 @@ GET /api/v1/groves/{groveId}/agents
 
 Returns agents belonging to a specific grove. Same response format as `GET /agents`.
 
-### 4.8 List Grove Contributors
+### 4.8 List Grove Providers
 
 ```
-GET /api/v1/groves/{groveId}/contributors
+GET /api/v1/groves/{groveId}/providers
 ```
 
-Returns runtime brokers contributing to this grove.
+Returns runtime brokers providing services to this grove.
 
 **Response:**
 ```json
 {
-  "contributors": [
+  "providers": [
     {
       "brokerId": "string",
       "brokerName": "string",
@@ -714,13 +714,13 @@ Returns runtime brokers contributing to this grove.
 }
 ```
 
-### 4.9 Remove Grove Contributor
+### 4.9 Remove Grove Provider
 
 ```
-DELETE /api/v1/groves/{groveId}/contributors/{brokerId}
+DELETE /api/v1/groves/{groveId}/providers/{brokerId}
 ```
 
-Removes a broker as a contributor to this grove. Does not affect agents already running on that broker.
+Removes a broker as a provider to this grove. Does not affect agents already running on that broker.
 
 ### 4.10 Grove Settings
 

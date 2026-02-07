@@ -163,8 +163,8 @@ type BrokerProfile struct {
 	Namespace string `json:"namespace,omitempty"` // K8s namespace
 }
 
-// GroveContributor links a runtime broker to a grove.
-type GroveContributor struct {
+// GroveProvider links a runtime broker to a grove.
+type GroveProvider struct {
 	GroveID    string    `json:"groveId"`
 	BrokerID   string    `json:"brokerId"`
 	BrokerName string    `json:"brokerName"`

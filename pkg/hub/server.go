@@ -160,7 +160,7 @@ type RemoteCreateAgentRequest struct {
 	HubEndpoint string             `json:"hubEndpoint,omitempty"`
 	AgentToken  string             `json:"agentToken,omitempty"`
 	// GrovePath is the local filesystem path to the grove on the target runtime broker.
-	// This is looked up from the grove contributor record for the target broker.
+	// This is looked up from the grove provider record for the target broker.
 	GrovePath string `json:"grovePath,omitempty"`
 }
 
@@ -303,14 +303,14 @@ func New(cfg ServerConfig, s store.Store) *Server {
 			slog.Error("Failed to mark broker offline", "brokerID", brokerID, "error", err)
 		}
 
-		// Update all grove contributor records for this broker
-		contribs, err := s.GetBrokerGroves(ctx, brokerID)
+		// Update all grove provider records for this broker
+		providers, err := s.GetBrokerGroves(ctx, brokerID)
 		if err != nil {
 			slog.Error("Failed to get broker groves for status update", "brokerID", brokerID, "error", err)
 		} else {
-			for _, contrib := range contribs {
-				if err := s.UpdateContributorStatus(ctx, contrib.GroveID, brokerID, store.BrokerStatusOffline); err != nil {
-					slog.Error("Failed to update contributor status", "brokerID", brokerID, "groveID", contrib.GroveID, "error", err)
+			for _, provider := range providers {
+				if err := s.UpdateProviderStatus(ctx, provider.GroveID, brokerID, store.BrokerStatusOffline); err != nil {
+					slog.Error("Failed to update provider status", "brokerID", brokerID, "groveID", provider.GroveID, "error", err)
 				}
 			}
 		}
@@ -914,7 +914,7 @@ func (s *Server) handleRuntimeBrokerConnect(w http.ResponseWriter, r *http.Reque
 	s.markBrokerOnline(broker.ID())
 }
 
-// markBrokerOnline updates broker and contributor statuses to online after a successful WebSocket connection.
+// markBrokerOnline updates broker and provider statuses to online after a successful WebSocket connection.
 func (s *Server) markBrokerOnline(brokerID string) {
 	ctx := context.Background()
 	slog.Info("Broker connected, marking online", "brokerID", brokerID)
@@ -923,14 +923,14 @@ func (s *Server) markBrokerOnline(brokerID string) {
 		slog.Error("Failed to mark broker online", "brokerID", brokerID, "error", err)
 	}
 
-	contribs, err := s.store.GetBrokerGroves(ctx, brokerID)
+	providers, err := s.store.GetBrokerGroves(ctx, brokerID)
 	if err != nil {
 		slog.Error("Failed to get broker groves for status update", "brokerID", brokerID, "error", err)
 		return
 	}
-	for _, contrib := range contribs {
-		if err := s.store.UpdateContributorStatus(ctx, contrib.GroveID, brokerID, store.BrokerStatusOnline); err != nil {
-			slog.Error("Failed to update contributor status", "brokerID", brokerID, "groveID", contrib.GroveID, "error", err)
+	for _, provider := range providers {
+		if err := s.store.UpdateProviderStatus(ctx, provider.GroveID, brokerID, store.BrokerStatusOnline); err != nil {
+			slog.Error("Failed to update provider status", "brokerID", brokerID, "groveID", provider.GroveID, "error", err)
 		}
 	}
 }

@@ -218,15 +218,15 @@ func TestAgentCreate(t *testing.T) {
 		t.Fatalf("failed to create grove: %v", err)
 	}
 
-	// Register the broker as a contributor to the grove
-	contrib := &store.GroveContributor{
+	// Register the broker as a provider to the grove
+	contrib := &store.GroveProvider{
 		GroveID:  grove.ID,
 		BrokerID:   broker.ID,
 		BrokerName: broker.Name,
 				Status:   store.BrokerStatusOnline,
 	}
-	if err := s.AddGroveContributor(ctx, contrib); err != nil {
-		t.Fatalf("failed to add grove contributor: %v", err)
+	if err := s.AddGroveProvider(ctx, contrib); err != nil {
+		t.Fatalf("failed to add grove provider: %v", err)
 	}
 
 	body := map[string]interface{}{
@@ -266,9 +266,9 @@ func TestAgentCreate(t *testing.T) {
 	}
 }
 
-// TestAgentCreate_SingleContributor tests that when a grove has no default runtime broker
-// but has exactly one online contributor, that contributor is used automatically.
-func TestAgentCreate_SingleContributor(t *testing.T) {
+// TestAgentCreate_SingleProvider tests that when a grove has no default runtime broker
+// but has exactly one online provider, that provider is used automatically.
+func TestAgentCreate_SingleProvider(t *testing.T) {
 	srv, s := testServer(t)
 	ctx := context.Background()
 
@@ -297,15 +297,15 @@ func TestAgentCreate_SingleContributor(t *testing.T) {
 		t.Fatalf("failed to create grove: %v", err)
 	}
 
-	// Register the broker as the only contributor to the grove
-	contrib := &store.GroveContributor{
+	// Register the broker as the only provider to the grove
+	contrib := &store.GroveProvider{
 		GroveID:  grove.ID,
 		BrokerID:   broker.ID,
 		BrokerName: broker.Name,
 				Status:   store.BrokerStatusOnline,
 	}
-	if err := s.AddGroveContributor(ctx, contrib); err != nil {
-		t.Fatalf("failed to add grove contributor: %v", err)
+	if err := s.AddGroveProvider(ctx, contrib); err != nil {
+		t.Fatalf("failed to add grove provider: %v", err)
 	}
 
 	// Create agent without specifying runtimeBrokerId
@@ -325,15 +325,15 @@ func TestAgentCreate_SingleContributor(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	// Should automatically use the single contributor
+	// Should automatically use the single provider
 	if resp.Agent.RuntimeBrokerID != broker.ID {
-		t.Errorf("expected runtimeBrokerId %q (single contributor), got %q", broker.ID, resp.Agent.RuntimeBrokerID)
+		t.Errorf("expected runtimeBrokerId %q (single provider), got %q", broker.ID, resp.Agent.RuntimeBrokerID)
 	}
 }
 
-// TestAgentCreate_MultipleContributors tests that when a grove has multiple online contributors
+// TestAgentCreate_MultipleProviders tests that when a grove has multiple online providers
 // but no default runtime broker, an error is returned requiring explicit selection.
-func TestAgentCreate_MultipleContributors(t *testing.T) {
+func TestAgentCreate_MultipleProviders(t *testing.T) {
 	srv, s := testServer(t)
 	ctx := context.Background()
 
@@ -372,25 +372,25 @@ func TestAgentCreate_MultipleContributors(t *testing.T) {
 		t.Fatalf("failed to create grove: %v", err)
 	}
 
-	// Register both brokers as contributors to the grove
-	contrib1 := &store.GroveContributor{
+	// Register both brokers as providers to the grove
+	contrib1 := &store.GroveProvider{
 		GroveID:    grove.ID,
 		BrokerID:   broker1.ID,
 		BrokerName: broker1.Name,
 		Status:     store.BrokerStatusOnline,
 	}
-	if err := s.AddGroveContributor(ctx, contrib1); err != nil {
-		t.Fatalf("failed to add grove contributor 1: %v", err)
+	if err := s.AddGroveProvider(ctx, contrib1); err != nil {
+		t.Fatalf("failed to add grove provider 1: %v", err)
 	}
 
-	contrib2 := &store.GroveContributor{
+	contrib2 := &store.GroveProvider{
 		GroveID:    grove.ID,
 		BrokerID:   broker2.ID,
 		BrokerName: broker2.Name,
 		Status:     store.BrokerStatusOnline,
 	}
-	if err := s.AddGroveContributor(ctx, contrib2); err != nil {
-		t.Fatalf("failed to add grove contributor 2: %v", err)
+	if err := s.AddGroveProvider(ctx, contrib2); err != nil {
+		t.Fatalf("failed to add grove provider 2: %v", err)
 	}
 
 	// Attempt to create agent without specifying runtimeBrokerId
@@ -809,19 +809,19 @@ func TestGroveRegisterWithBrokerID(t *testing.T) {
 		t.Error("expected secretKey to be empty in new two-phase flow")
 	}
 
-	// Verify contributor was created
-	contributors, err := s.GetGroveContributors(ctx, resp.Grove.ID)
+	// Verify provider was created
+	providers, err := s.GetGroveProviders(ctx, resp.Grove.ID)
 	if err != nil {
-		t.Fatalf("failed to get contributors: %v", err)
+		t.Fatalf("failed to get providers: %v", err)
 	}
-	if len(contributors) != 1 {
-		t.Errorf("expected 1 contributor, got %d", len(contributors))
+	if len(providers) != 1 {
+		t.Errorf("expected 1 provider, got %d", len(providers))
 	}
-	if contributors[0].BrokerID != broker.ID {
-		t.Errorf("expected contributor broker ID %q, got %q", broker.ID, contributors[0].BrokerID)
+	if providers[0].BrokerID != broker.ID {
+		t.Errorf("expected provider broker ID %q, got %q", broker.ID, providers[0].BrokerID)
 	}
-	if contributors[0].LocalPath != "/path/to/project/.scion" {
-		t.Errorf("expected localPath '/path/to/project/.scion', got %q", contributors[0].LocalPath)
+	if providers[0].LocalPath != "/path/to/project/.scion" {
+		t.Errorf("expected localPath '/path/to/project/.scion', got %q", providers[0].LocalPath)
 	}
 }
 
@@ -850,7 +850,7 @@ func TestGroveRegisterWithInvalidBrokerID(t *testing.T) {
 	}
 }
 
-func TestAddContributor(t *testing.T) {
+func TestAddProvider(t *testing.T) {
 	srv, s := testServer(t)
 	ctx := context.Background()
 
@@ -858,7 +858,7 @@ func TestAddContributor(t *testing.T) {
 	grove := &store.Grove{
 		ID:        "grove_contrib_test",
 		Slug:      "contrib-test",
-		Name:      "Contributor Test Grove",
+		Name:      "Provider Test Grove",
 		GitRemote: "https://github.com/test/contrib-test",
 		Created:   time.Now(),
 		Updated:   time.Now(),
@@ -870,7 +870,7 @@ func TestAddContributor(t *testing.T) {
 	// Create a broker
 	broker := &store.RuntimeBroker{
 		ID:     "host_contrib_test",
-		Name:   "Contributor Test Host",
+		Name:   "Provider Test Host",
 		Slug:   "contrib-test-host",
 				Status: store.BrokerStatusOnline,
 	}
@@ -878,31 +878,31 @@ func TestAddContributor(t *testing.T) {
 		t.Fatalf("failed to create runtime broker: %v", err)
 	}
 
-	// Add contributor via API
+	// Add provider via API
 	body := map[string]interface{}{
 		"brokerId":    broker.ID,
 		"localPath": "/home/user/project/.scion",
 		"mode":      "connected",
 	}
 
-	rec := doRequest(t, srv, http.MethodPost, "/api/v1/groves/"+grove.ID+"/contributors", body)
+	rec := doRequest(t, srv, http.MethodPost, "/api/v1/groves/"+grove.ID+"/providers", body)
 	if rec.Code != http.StatusCreated {
 		t.Errorf("expected status 201, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp AddContributorResponse
+	var resp AddProviderResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	if resp.Contributor == nil {
-		t.Fatal("expected contributor in response")
+	if resp.Provider == nil {
+		t.Fatal("expected provider in response")
 	}
-	if resp.Contributor.BrokerID != broker.ID {
-		t.Errorf("expected broker ID %q, got %q", broker.ID, resp.Contributor.BrokerID)
+	if resp.Provider.BrokerID != broker.ID {
+		t.Errorf("expected broker ID %q, got %q", broker.ID, resp.Provider.BrokerID)
 	}
-	if resp.Contributor.LocalPath != "/home/user/project/.scion" {
-		t.Errorf("expected localPath, got %q", resp.Contributor.LocalPath)
+	if resp.Provider.LocalPath != "/home/user/project/.scion" {
+		t.Errorf("expected localPath, got %q", resp.Provider.LocalPath)
 	}
 
 	// Verify grove now has default runtime broker set
@@ -915,7 +915,7 @@ func TestAddContributor(t *testing.T) {
 	}
 }
 
-func TestListContributors(t *testing.T) {
+func TestListProviders(t *testing.T) {
 	srv, s := testServer(t)
 	ctx := context.Background()
 
@@ -923,7 +923,7 @@ func TestListContributors(t *testing.T) {
 	grove := &store.Grove{
 		ID:      "grove_list_contrib",
 		Slug:    "list-contrib",
-		Name:    "List Contributors Grove",
+		Name:    "List Providers Grove",
 		Created: time.Now(),
 		Updated: time.Now(),
 	}
@@ -931,10 +931,10 @@ func TestListContributors(t *testing.T) {
 		t.Fatalf("failed to create grove: %v", err)
 	}
 
-	// Create and add a broker as contributor
+	// Create and add a broker as provider
 	broker := &store.RuntimeBroker{
 		ID:     "host_list_contrib",
-		Name:   "List Contributors Host",
+		Name:   "List Providers Host",
 		Slug:   "list-contrib-host",
 				Status: store.BrokerStatusOnline,
 	}
@@ -942,34 +942,34 @@ func TestListContributors(t *testing.T) {
 		t.Fatalf("failed to create runtime broker: %v", err)
 	}
 
-	contrib := &store.GroveContributor{
+	contrib := &store.GroveProvider{
 		GroveID:   grove.ID,
 		BrokerID:    broker.ID,
 		BrokerName:  broker.Name,
 		LocalPath: "/test/path",
 				Status:    store.BrokerStatusOnline,
 	}
-	if err := s.AddGroveContributor(ctx, contrib); err != nil {
-		t.Fatalf("failed to add contributor: %v", err)
+	if err := s.AddGroveProvider(ctx, contrib); err != nil {
+		t.Fatalf("failed to add provider: %v", err)
 	}
 
-	// List contributors
-	rec := doRequest(t, srv, http.MethodGet, "/api/v1/groves/"+grove.ID+"/contributors", nil)
+	// List providers
+	rec := doRequest(t, srv, http.MethodGet, "/api/v1/groves/"+grove.ID+"/providers", nil)
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp map[string][]store.GroveContributor
+	var resp map[string][]store.GroveProvider
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	contributors := resp["contributors"]
-	if len(contributors) != 1 {
-		t.Errorf("expected 1 contributor, got %d", len(contributors))
+	providers := resp["providers"]
+	if len(providers) != 1 {
+		t.Errorf("expected 1 provider, got %d", len(providers))
 	}
-	if contributors[0].BrokerID != broker.ID {
-		t.Errorf("expected broker ID %q, got %q", broker.ID, contributors[0].BrokerID)
+	if providers[0].BrokerID != broker.ID {
+		t.Errorf("expected broker ID %q, got %q", broker.ID, providers[0].BrokerID)
 	}
 }
 
@@ -1106,16 +1106,16 @@ func TestRuntimeBrokerListWithGroveLocalPath(t *testing.T) {
 		t.Fatalf("failed to create runtime broker: %v", err)
 	}
 
-	// Add broker as grove contributor with a local path
-	contrib := &store.GroveContributor{
+	// Add broker as grove provider with a local path
+	contrib := &store.GroveProvider{
 		GroveID:   grove.ID,
 		BrokerID:    broker.ID,
 		BrokerName:  broker.Name,
 		LocalPath: "/path/to/project/.scion",
 				Status:    store.BrokerStatusOnline,
 	}
-	if err := s.AddGroveContributor(ctx, contrib); err != nil {
-		t.Fatalf("failed to add grove contributor: %v", err)
+	if err := s.AddGroveProvider(ctx, contrib); err != nil {
+		t.Fatalf("failed to add grove provider: %v", err)
 	}
 
 	// List runtime brokers filtered by grove - should include localPath
@@ -1125,7 +1125,7 @@ func TestRuntimeBrokerListWithGroveLocalPath(t *testing.T) {
 		t.Errorf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var resp ListRuntimeBrokersWithContributorResponse
+	var resp ListRuntimeBrokersWithProviderResponse
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -1143,7 +1143,7 @@ func TestRuntimeBrokerListWithGroveLocalPath(t *testing.T) {
 	}
 
 	// List all runtime brokers (no grove filter) - should NOT include localPath field structure
-	// (uses ListRuntimeBrokersResponse, not ListRuntimeBrokersWithContributorResponse)
+	// (uses ListRuntimeBrokersResponse, not ListRuntimeBrokersWithProviderResponse)
 	rec2 := doRequest(t, srv, http.MethodGet, "/api/v1/runtime-brokers", nil)
 	if rec2.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d: %s", rec2.Code, rec2.Body.String())

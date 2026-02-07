@@ -105,10 +105,10 @@ sequenceDiagram
     Hub->>DB: Lookup grove by git remote
     alt Grove exists
         DB-->>Hub: Existing grove record
-        Hub->>DB: Add broker as contributor
+        Hub->>DB: Add broker as provider
     else Grove is new
         Hub->>DB: Create grove record
-        Hub->>DB: Add broker as contributor
+        Hub->>DB: Add broker as provider
     end
     Hub-->>Broker: Grove ID + Broker Token
 ```
@@ -127,7 +127,7 @@ The central authority responsible for:
 The grove is the **primary unit of registration** with the Hub. A grove represents a project, typically backed by a git repository.
 
 *   **Identity:** Groves with git repositories are uniquely identified by their normalized git remote URL. This is enforced at the Hub level.
-*   **Distributed:** A grove can span multiple runtime brokers. Each broker that registers the same grove (identified by git remote) becomes a contributor.
+*   **Distributed:** A grove can span multiple runtime brokers. Each broker that registers the same grove (identified by git remote) becomes a provider.
 *   **Default Runtime Broker:** Each grove has a default runtime broker (`defaultRuntimeBrokerId`) that is used when creating agents without an explicit broker. This is automatically set to the first runtime broker that registers with the grove.
 *   **Profiles:** Runtime configuration (Docker vs K8s, resource limits, etc.) is defined per-grove in the settings file. Brokers advertise which profiles they can execute.
 *   **Hub Record:** The Hub maintains:
@@ -174,8 +174,8 @@ The browser-based dashboard for user interaction. Detailed specifications are in
     *   Broker identifier and capabilities
 4.  **Scion Hub**:
     *   Looks up existing grove by git remote URL.
-    *   If found: adds this broker as a contributor to the existing grove.
-    *   If not found: creates a new grove record with this broker as the initial contributor.
+    *   If found: adds this broker as a provider to the existing grove.
+    *   If not found: creates a new grove record with this broker as the initial provider.
     *   If the grove has no `defaultRuntimeBrokerId`, sets this broker as the default.
     *   Returns grove ID and broker authentication token.
 5.  **Runtime Broker** stores the grove ID and token for subsequent operations.
@@ -183,7 +183,7 @@ The browser-based dashboard for user interaction. Detailed specifications are in
 ### 5.2. Agent Creation (Hosted/Distributed)
 1.  **User** requests agent creation via Scion Hub API, specifying grove and optionally a `runtimeBrokerId`.
 2.  **Scion Hub** resolves the runtime broker:
-    *   If `runtimeBrokerId` is explicitly provided, verify it's a valid, online contributor to the grove.
+    *   If `runtimeBrokerId` is explicitly provided, verify it's a valid, online provider to the grove.
     *   Otherwise, use the grove's `defaultRuntimeBrokerId` (set when the first broker registers).
     *   If the resolved broker is unavailable or no broker is configured, return an error with a list of available alternatives.
 3.  **Scion Hub**:
@@ -206,11 +206,11 @@ sequenceDiagram
     participant Broker as Runtime Broker
 
     User->>Hub: POST /agents (groveId, [runtimeBrokerId])
-    Hub->>DB: Get grove + contributors
+    Hub->>DB: Get grove + providers
     DB-->>Hub: Grove (defaultRuntimeBrokerId) + online brokers
 
     alt runtimeBrokerId specified
-        Hub->>Hub: Verify broker is online contributor
+        Hub->>Hub: Verify broker is online provider
     else use default
         Hub->>Hub: Use grove.defaultRuntimeBrokerId
     end
@@ -435,8 +435,8 @@ The merged environment is passed to the Runtime Broker as part of the `CreateAge
 | Operation | User Scope | Grove Scope | Broker Scope |
 |-----------|------------|-------------|--------------|
 | Create/Update | Owner only | Grove owner/admin | Broker owner/admin |
-| Read (env) | Owner only | Grove members | Broker contributors |
-| Read (secret metadata) | Owner only | Grove members | Broker contributors |
+| Read (env) | Owner only | Grove members | Broker providers |
+| Read (secret metadata) | Owner only | Grove members | Broker providers |
 | Read (secret value) | Never via API | Never via API | Never via API |
 | Delete | Owner only | Grove owner/admin | Broker owner/admin |
 

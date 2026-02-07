@@ -136,7 +136,7 @@ type CreateAgentRequest struct {
 	ResolvedEnv map[string]string `json:"resolvedEnv,omitempty"`
 
 	// GrovePath is the local filesystem path to the grove on this runtime broker.
-	// This is provided by the Hub from the grove contributor record.
+	// This is provided by the Hub from the grove provider record.
 	GrovePath string `json:"grovePath,omitempty"`
 }
 

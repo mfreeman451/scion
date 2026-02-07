@@ -11,13 +11,13 @@ This API effectively exposes the `pkg/agent.Manager` interface over a network bo
 
 ### 1.1. Grove-Centric Architecture
 
-Runtime Brokers interact with the Hub through the **groves they contribute to**. A broker does not register itself as a standalone entity; instead, it registers one or more groves via `POST /api/v1/groves/register` on the Hub. This grove registration:
+Runtime Brokers interact with the Hub through the **groves they provide for**. A broker does not register itself as a standalone entity; instead, it registers one or more groves via `POST /api/v1/groves/register` on the Hub. This grove registration:
 
 1. Creates or links to an existing grove (identified by git remote URL)
-2. Adds this broker as a contributor to the grove
+2. Adds this broker as a provider to the grove
 3. Returns a broker token for subsequent authentication
 
-All agent operations on a broker are scoped to the groves it contributes to.
+All agent operations on a broker are scoped to the groves it provides for.
 
 ### 1.2. Relationship to Hub API
 
@@ -100,7 +100,7 @@ POST {HUB_URL}/api/v1/groves/register
 
 This endpoint:
 1. Creates a new grove or links to an existing one (matched by git remote URL)
-2. Adds this broker as a contributor to the grove
+2. Adds this broker as a provider to the grove
 3. Returns a grove ID and broker authentication token
 
 See Hub API Section 4.3 for the full request/response format.

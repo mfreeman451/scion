@@ -694,15 +694,15 @@ type RegisterGroveResponse struct {
 	SecretKey string             `json:"secretKey,omitempty"` // DEPRECATED: secrets only from /brokers/join
 }
 
-// AddContributorRequest is the request for adding a broker as a grove contributor.
-type AddContributorRequest struct {
+// AddProviderRequest is the request for adding a broker as a grove provider.
+type AddProviderRequest struct {
 	BrokerID  string `json:"brokerId"`
 	LocalPath string `json:"localPath,omitempty"`
 }
 
-// AddContributorResponse is the response after adding a contributor.
-type AddContributorResponse struct {
-	Contributor *store.GroveContributor `json:"contributor"`
+// AddProviderResponse is the response after adding a provider.
+type AddProviderResponse struct {
+	Provider *store.GroveProvider `json:"provider"`
 }
 
 func (s *Server) handleGroves(w http.ResponseWriter, r *http.Request) {
@@ -893,8 +893,8 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 		}
 		broker = existingBroker
 
-		// Add as grove contributor
-		contrib := &store.GroveContributor{
+		// Add as grove provider
+		provider := &store.GroveProvider{
 			GroveID:    grove.ID,
 			BrokerID:   broker.ID,
 			BrokerName: broker.Name,
@@ -902,7 +902,7 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 			Status:     broker.Status,
 		}
 
-		if err := s.store.AddGroveContributor(ctx, contrib); err != nil {
+		if err := s.store.AddGroveProvider(ctx, provider); err != nil {
 			writeErrorFromErr(w, err, "")
 			return
 		}
@@ -981,8 +981,8 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Add as grove contributor
-		contrib := &store.GroveContributor{
+		// Add as grove provider
+		provider := &store.GroveProvider{
 			GroveID:    grove.ID,
 			BrokerID:   broker.ID,
 			BrokerName: broker.Name,
@@ -990,7 +990,7 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 			Status:     store.BrokerStatusOnline,
 		}
 
-		if err := s.store.AddGroveContributor(ctx, contrib); err != nil {
+		if err := s.store.AddGroveProvider(ctx, provider); err != nil {
 			writeErrorFromErr(w, err, "")
 			return
 		}
@@ -1091,11 +1091,11 @@ func (s *Server) handleGroveRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for nested /contributors path
-	if strings.HasPrefix(subPath, "contributors") {
-		contribPath := strings.TrimPrefix(subPath, "contributors")
-		contribPath = strings.TrimPrefix(contribPath, "/")
-		s.handleGroveContributors(w, r, groveID, contribPath)
+	// Check for nested /providers path
+	if strings.HasPrefix(subPath, "providers") {
+		providerPath := strings.TrimPrefix(subPath, "providers")
+		providerPath = strings.TrimPrefix(providerPath, "/")
+		s.handleGroveProviders(w, r, groveID, providerPath)
 		return
 	}
 
@@ -1615,19 +1615,19 @@ type ListRuntimeBrokersResponse struct {
 	TotalCount int                 `json:"totalCount"`
 }
 
-// RuntimeBrokerWithContributor extends RuntimeBroker with grove-specific contributor data.
+// RuntimeBrokerWithProvider extends RuntimeBroker with grove-specific provider data.
 // This is returned when listing brokers filtered by groveId, providing the local path
 // for the grove on each broker.
-type RuntimeBrokerWithContributor struct {
+type RuntimeBrokerWithProvider struct {
 	store.RuntimeBroker
 	LocalPath string `json:"localPath,omitempty"` // Filesystem path to the grove on this broker
 }
 
-// ListRuntimeBrokersWithContributorResponse is returned when filtering by groveId.
-type ListRuntimeBrokersWithContributorResponse struct {
-	Brokers []RuntimeBrokerWithContributor `json:"brokers"`
-	NextCursor string                       `json:"nextCursor,omitempty"`
-	TotalCount int                          `json:"totalCount"`
+// ListRuntimeBrokersWithProviderResponse is returned when filtering by groveId.
+type ListRuntimeBrokersWithProviderResponse struct {
+	Brokers []RuntimeBrokerWithProvider `json:"brokers"`
+	NextCursor string                    `json:"nextCursor,omitempty"`
+	TotalCount int                       `json:"totalCount"`
 }
 
 func (s *Server) handleRuntimeBrokers(w http.ResponseWriter, r *http.Request) {
@@ -1665,10 +1665,10 @@ func (s *Server) listRuntimeBrokers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If filtering by groveId, include grove-specific contributor data (like localPath)
+	// If filtering by groveId, include grove-specific provider data (like localPath)
 	if groveID != "" {
-		// Get contributor data for this grove to include localPath
-		contributors, err := s.store.GetGroveContributors(ctx, groveID)
+		// Get provider data for this grove to include localPath
+		providers, err := s.store.GetGroveProviders(ctx, groveID)
 		if err != nil {
 			writeErrorFromErr(w, err, "")
 			return
@@ -1676,20 +1676,20 @@ func (s *Server) listRuntimeBrokers(w http.ResponseWriter, r *http.Request) {
 
 		// Build a map of brokerId -> localPath for quick lookup
 		brokerLocalPaths := make(map[string]string)
-		for _, c := range contributors {
-			brokerLocalPaths[c.BrokerID] = c.LocalPath
+		for _, p := range providers {
+			brokerLocalPaths[p.BrokerID] = p.LocalPath
 		}
 
-		// Build extended broker list with contributor data
-		extendedBrokers := make([]RuntimeBrokerWithContributor, 0, len(result.Items))
+		// Build extended broker list with provider data
+		extendedBrokers := make([]RuntimeBrokerWithProvider, 0, len(result.Items))
 		for _, broker := range result.Items {
-			extendedBrokers = append(extendedBrokers, RuntimeBrokerWithContributor{
+			extendedBrokers = append(extendedBrokers, RuntimeBrokerWithProvider{
 				RuntimeBroker: broker,
 				LocalPath:   brokerLocalPaths[broker.ID],
 			})
 		}
 
-		writeJSON(w, http.StatusOK, ListRuntimeBrokersWithContributorResponse{
+		writeJSON(w, http.StatusOK, ListRuntimeBrokersWithProviderResponse{
 			Brokers:    extendedBrokers,
 			NextCursor: result.NextCursor,
 			TotalCount: result.TotalCount,
@@ -2806,12 +2806,12 @@ func (s *Server) handleGroveSecretByKey(w http.ResponseWriter, r *http.Request, 
 }
 
 // ============================================================================
-// Grove Contributors Endpoints
+// Grove Providers Endpoints
 // ============================================================================
 
-// handleGroveContributors handles contributor operations for a grove.
-// Path: /api/v1/groves/{groveId}/contributors[/{brokerId}]
-func (s *Server) handleGroveContributors(w http.ResponseWriter, r *http.Request, groveID, subPath string) {
+// handleGroveProviders handles provider operations for a grove.
+// Path: /api/v1/groves/{groveId}/providers[/{brokerId}]
+func (s *Server) handleGroveProviders(w http.ResponseWriter, r *http.Request, groveID, subPath string) {
 	ctx := r.Context()
 
 	// Verify grove exists
@@ -2829,9 +2829,9 @@ func (s *Server) handleGroveContributors(w http.ResponseWriter, r *http.Request,
 	if subPath == "" {
 		switch r.Method {
 		case http.MethodGet:
-			s.listGroveContributors(w, r, groveID)
+			s.listGroveProviders(w, r, groveID)
 		case http.MethodPost:
-			s.addGroveContributor(w, r, groveID)
+			s.addGroveProvider(w, r, groveID)
 		default:
 			MethodNotAllowed(w)
 		}
@@ -2842,32 +2842,32 @@ func (s *Server) handleGroveContributors(w http.ResponseWriter, r *http.Request,
 	brokerID := subPath
 	switch r.Method {
 	case http.MethodDelete:
-		s.removeGroveContributor(w, r, groveID, brokerID)
+		s.removeGroveProvider(w, r, groveID, brokerID)
 	default:
 		MethodNotAllowed(w)
 	}
 }
 
-// listGroveContributors returns all contributors for a grove.
-func (s *Server) listGroveContributors(w http.ResponseWriter, r *http.Request, groveID string) {
+// listGroveProviders returns all providers for a grove.
+func (s *Server) listGroveProviders(w http.ResponseWriter, r *http.Request, groveID string) {
 	ctx := r.Context()
 
-	contributors, err := s.store.GetGroveContributors(ctx, groveID)
+	providers, err := s.store.GetGroveProviders(ctx, groveID)
 	if err != nil {
 		writeErrorFromErr(w, err, "")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"contributors": contributors,
+		"providers": providers,
 	})
 }
 
-// addGroveContributor adds a broker as a contributor to a grove.
-func (s *Server) addGroveContributor(w http.ResponseWriter, r *http.Request, groveID string) {
+// addGroveProvider adds a broker as a provider to a grove.
+func (s *Server) addGroveProvider(w http.ResponseWriter, r *http.Request, groveID string) {
 	ctx := r.Context()
 
-	var req AddContributorRequest
+	var req AddProviderRequest
 	if err := readJSON(r, &req); err != nil {
 		BadRequest(w, "Invalid request body: "+err.Error())
 		return
@@ -2898,8 +2898,8 @@ func (s *Server) addGroveContributor(w http.ResponseWriter, r *http.Request, gro
 		linkedBy = user.ID()
 	}
 
-	// Create contributor record
-	contrib := &store.GroveContributor{
+	// Create provider record
+	provider := &store.GroveProvider{
 		GroveID:    groveID,
 		BrokerID:   broker.ID,
 		BrokerName: broker.Name,
@@ -2908,7 +2908,7 @@ func (s *Server) addGroveContributor(w http.ResponseWriter, r *http.Request, gro
 		LinkedBy:   linkedBy,
 	}
 
-	if err := s.store.AddGroveContributor(ctx, contrib); err != nil {
+	if err := s.store.AddGroveProvider(ctx, provider); err != nil {
 		writeErrorFromErr(w, err, "")
 		return
 	}
@@ -2923,13 +2923,13 @@ func (s *Server) addGroveContributor(w http.ResponseWriter, r *http.Request, gro
 	// Log the link event
 	LogLinkEvent(ctx, s.auditLogger, broker.ID, broker.Name, groveID, linkedBy, getClientIP(r))
 
-	writeJSON(w, http.StatusCreated, AddContributorResponse{
-		Contributor: contrib,
+	writeJSON(w, http.StatusCreated, AddProviderResponse{
+		Provider: provider,
 	})
 }
 
-// removeGroveContributor removes a broker from a grove's contributors.
-func (s *Server) removeGroveContributor(w http.ResponseWriter, r *http.Request, groveID, brokerID string) {
+// removeGroveProvider removes a broker from a grove's providers.
+func (s *Server) removeGroveProvider(w http.ResponseWriter, r *http.Request, groveID, brokerID string) {
 	ctx := r.Context()
 
 	// Get the user who is performing this action for audit logging
@@ -2938,7 +2938,7 @@ func (s *Server) removeGroveContributor(w http.ResponseWriter, r *http.Request, 
 		actorID = user.ID()
 	}
 
-	if err := s.store.RemoveGroveContributor(ctx, groveID, brokerID); err != nil {
+	if err := s.store.RemoveGroveProvider(ctx, groveID, brokerID); err != nil {
 		writeErrorFromErr(w, err, "")
 		return
 	}
@@ -3200,15 +3200,15 @@ func (s *Server) getHarnessFromTemplate(template *store.Template, fallback strin
 
 // resolveRuntimeBroker determines which runtime broker should run the agent.
 // Priority order:
-//  1. Explicitly specified broker (requestedBrokerID) - verified to be a contributor
+//  1. Explicitly specified broker (requestedBrokerID) - verified to be a provider
 //  2. Grove's default runtime broker - verified to be available (online)
-//  3. Single contributor (any status) - used automatically
-//  4. Multiple contributors with online brokers - returns error requiring explicit selection
-//  5. No contributors - returns error
+//  3. Single provider (any status) - used automatically
+//  4. Multiple providers with online brokers - returns error requiring explicit selection
+//  5. No providers - returns error
 // Returns the runtime broker ID or an error (after writing the HTTP error response).
 func (s *Server) resolveRuntimeBroker(ctx context.Context, w http.ResponseWriter, requestedBrokerID string, grove *store.Grove) (string, error) {
-	// Get ALL contributors for this grove (regardless of status)
-	allContributors, err := s.store.GetGroveContributors(ctx, grove.ID)
+	// Get ALL providers for this grove (regardless of status)
+	allProviders, err := s.store.GetGroveProviders(ctx, grove.ID)
 	if err != nil {
 		writeErrorFromErr(w, err, "")
 		return "", err
@@ -3233,18 +3233,18 @@ func (s *Server) resolveRuntimeBroker(ctx context.Context, w http.ResponseWriter
 
 	// Case 1: Explicit runtime broker specified
 	if requestedBrokerID != "" {
-		// Check if the requested broker is a contributor to this grove (by ID, Name, or Slug)
-		for _, c := range allContributors {
-			if c.BrokerID == requestedBrokerID || c.BrokerName == requestedBrokerID {
-				return c.BrokerID, nil
+		// Check if the requested broker is a provider to this grove (by ID, Name, or Slug)
+		for _, p := range allProviders {
+			if p.BrokerID == requestedBrokerID || p.BrokerName == requestedBrokerID {
+				return p.BrokerID, nil
 			}
 			// Fetch broker to check slug
-			broker, err := s.store.GetRuntimeBroker(ctx, c.BrokerID)
+			broker, err := s.store.GetRuntimeBroker(ctx, p.BrokerID)
 			if err == nil && broker.Slug == requestedBrokerID {
 				return broker.ID, nil
 			}
 		}
-		// Requested broker is not a contributor
+		// Requested broker is not a provider
 		RuntimeBrokerUnavailable(w, requestedBrokerID, brokerSummaries)
 		return "", store.ErrNotFound
 	}
@@ -3266,14 +3266,14 @@ func (s *Server) resolveRuntimeBroker(ctx context.Context, w http.ResponseWriter
 		return "", store.ErrNotFound
 	}
 
-	// Case 3: No default and no explicit broker - check for single contributor
-	// If there's exactly one contributor, use it regardless of online status
+	// Case 3: No default and no explicit broker - check for single provider
+	// If there's exactly one provider, use it regardless of online status
 	// (the dispatch will fail gracefully if the broker is truly unavailable)
-	if len(allContributors) == 1 {
-		return allContributors[0].BrokerID, nil
+	if len(allProviders) == 1 {
+		return allProviders[0].BrokerID, nil
 	}
 
-	// Case 4: Multiple contributors - require explicit selection from online brokers
+	// Case 4: Multiple providers - require explicit selection from online brokers
 	switch len(availableBrokers) {
 	case 0:
 		NoRuntimeBroker(w, "No runtime brokers available for this grove; register a runtime broker first", brokerSummaries)
@@ -3285,19 +3285,19 @@ func (s *Server) resolveRuntimeBroker(ctx context.Context, w http.ResponseWriter
 	}
 }
 
-// getAvailableBrokersForGrove returns online runtime brokers that are contributors to the grove.
+// getAvailableBrokersForGrove returns online runtime brokers that are providers to the grove.
 func (s *Server) getAvailableBrokersForGrove(ctx context.Context, groveID string) ([]store.RuntimeBroker, error) {
-	// Get contributors for this grove
-	contributors, err := s.store.GetGroveContributors(ctx, groveID)
+	// Get providers for this grove
+	providers, err := s.store.GetGroveProviders(ctx, groveID)
 	if err != nil {
 		return nil, err
 	}
 
 	// Filter to online brokers and fetch their full details
 	var availableBrokers []store.RuntimeBroker
-	for _, contrib := range contributors {
-		if contrib.Status == store.BrokerStatusOnline {
-			broker, err := s.store.GetRuntimeBroker(ctx, contrib.BrokerID)
+	for _, provider := range providers {
+		if provider.Status == store.BrokerStatusOnline {
+			broker, err := s.store.GetRuntimeBroker(ctx, provider.BrokerID)
 			if err != nil {
 				continue // Skip brokers we can't fetch
 			}

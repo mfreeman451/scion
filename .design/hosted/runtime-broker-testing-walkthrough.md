@@ -38,7 +38,7 @@ You should see output like:
 
 When both servers start together, they automatically:
 1. Create a "global" grove as the default grove for the system
-2. Register the runtime broker as a contributor to the global grove
+2. Register the runtime broker as a provider to the global grove
 3. Set up an agent dispatcher for zero-friction agent handoff
 
 ### Alternative: Start Just Runtime Broker
@@ -465,10 +465,10 @@ PROJECT_GROVE_ID=$(echo $PROJECT_RESPONSE | jq -r '.grove.id')
 echo "Project Grove ID: $PROJECT_GROVE_ID"
 ```
 
-### Step 3: Verify the Grove Contributor Has the Local Path
+### Step 3: Verify the Grove Provider Has the Local Path
 
 ```bash
-# The contributor record should now include the local path
+# The provider record should now include the local path
 curl -s "http://localhost:9810/api/v1/runtime-brokers?groveId=$PROJECT_GROVE_ID" | jq
 ```
 
@@ -505,7 +505,7 @@ Expected response (note the `localPath` field included for each broker):
 }
 ```
 
-The `localPath` field is included when querying runtime brokers filtered by `groveId`, providing the grove-specific filesystem path for each broker contributor.
+The `localPath` field is included when querying runtime brokers filtered by `groveId`, providing the grove-specific filesystem path for each broker provider.
 
 ### Step 4: Create an Agent in the Project Grove
 
@@ -573,7 +573,7 @@ Expected response (422):
 
 ### Runtime Broker Unavailable
 
-When specifying a runtime broker that is offline or not a contributor:
+When specifying a runtime broker that is offline or not a provider:
 
 ```bash
 curl -s -X POST http://localhost:9810/api/v1/agents \

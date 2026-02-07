@@ -37,14 +37,14 @@ func TestAgentCreate_BrokerResolution(t *testing.T) {
 	}
 	require.NoError(t, s.CreateGrove(ctx, grove))
 
-	// Register broker as contributor
-	contrib := &store.GroveContributor{
+	// Register broker as provider
+	provider := &store.GroveProvider{
 		GroveID:  grove.ID,
 		BrokerID:   broker.ID,
 		BrokerName: broker.Name,
 				Status:   store.BrokerStatusOnline,
 	}
-	require.NoError(t, s.AddGroveContributor(ctx, contrib))
+	require.NoError(t, s.AddGroveProvider(ctx, provider))
 
 	t.Run("Resolve by ID", func(t *testing.T) {
 		body := map[string]interface{}{

@@ -617,7 +617,7 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 }
 
 // registerGlobalGroveAndBroker creates the global grove and registers this
-// runtime broker as a contributor. This enables automatic agent handoff.
+// runtime broker as a provider. This enables automatic agent handoff.
 func registerGlobalGroveAndBroker(ctx context.Context, s store.Store, brokerID, brokerName, endpoint string, rt runtime.Runtime) error {
 	// Check if global grove already exists
 	globalGrove, err := s.GetGroveBySlug(ctx, GlobalGroveName)
@@ -706,8 +706,8 @@ func registerGlobalGroveAndBroker(ctx context.Context, s store.Store, brokerID, 
 		globalPath = "" // Will work but agents may not find the right path
 	}
 
-	// Add runtime broker as contributor to global grove
-	contrib := &store.GroveContributor{
+	// Add runtime broker as provider to global grove
+	provider := &store.GroveProvider{
 		GroveID:    globalGrove.ID,
 		BrokerID:   brokerID,
 		BrokerName: brokerName,
@@ -716,14 +716,14 @@ func registerGlobalGroveAndBroker(ctx context.Context, s store.Store, brokerID, 
 		LastSeen:   time.Now(),
 	}
 
-	if err := s.AddGroveContributor(ctx, contrib); err != nil {
-		// Ignore duplicate contributor errors
+	if err := s.AddGroveProvider(ctx, provider); err != nil {
+		// Ignore duplicate provider errors
 		if err != store.ErrAlreadyExists {
-			return fmt.Errorf("failed to add grove contributor: %w", err)
+			return fmt.Errorf("failed to add grove provider: %w", err)
 		}
-		// Update contributor status
-		if err := s.UpdateContributorStatus(ctx, globalGrove.ID, brokerID, store.BrokerStatusOnline); err != nil {
-			log.Printf("Warning: failed to update contributor status: %v", err)
+		// Update provider status
+		if err := s.UpdateProviderStatus(ctx, globalGrove.ID, brokerID, store.BrokerStatusOnline); err != nil {
+			log.Printf("Warning: failed to update provider status: %v", err)
 		}
 	}
 
@@ -753,11 +753,11 @@ func (d *agentDispatcherAdapter) DispatchAgentCreate(ctx context.Context, hubAge
 	// Look up the local path for this grove on this runtime broker
 	var grovePath string
 	if hubAgent.GroveID != "" && d.brokerID != "" {
-		contrib, err := d.store.GetGroveContributor(ctx, hubAgent.GroveID, d.brokerID)
+		provider, err := d.store.GetGroveProvider(ctx, hubAgent.GroveID, d.brokerID)
 		if err != nil {
-			log.Printf("Warning: failed to get grove contributor for path lookup: %v", err)
-		} else if contrib.LocalPath != "" {
-			grovePath = contrib.LocalPath
+			log.Printf("Warning: failed to get grove provider for path lookup: %v", err)
+		} else if provider.LocalPath != "" {
+			grovePath = provider.LocalPath
 		}
 	}
 
@@ -865,11 +865,11 @@ func (d *agentDispatcherAdapter) DispatchAgentDelete(ctx context.Context, hubAge
 	// Look up the local path for this grove on this runtime broker
 	var grovePath string
 	if hubAgent.GroveID != "" && d.brokerID != "" {
-		contrib, err := d.store.GetGroveContributor(ctx, hubAgent.GroveID, d.brokerID)
+		provider, err := d.store.GetGroveProvider(ctx, hubAgent.GroveID, d.brokerID)
 		if err != nil {
-			log.Printf("Warning: failed to get grove contributor for path lookup: %v", err)
-		} else if contrib.LocalPath != "" {
-			grovePath = contrib.LocalPath
+			log.Printf("Warning: failed to get grove provider for path lookup: %v", err)
+		} else if provider.LocalPath != "" {
+			grovePath = provider.LocalPath
 		}
 	}
 

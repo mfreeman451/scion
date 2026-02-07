@@ -199,7 +199,7 @@ All store interfaces defined in `pkg/store/store.go`:
 **Recommendation:**
 - Implement upsert semantics for grove registration
 - Return existing grove ID if already registered
-- Add contributor relationship atomically
+- Add provider relationship atomically
 
 #### 2.2.3 Orphaned Agents on Broker Crash
 **Risk:** Runtime broker crashes with running agents; Hub still shows them as `running`.

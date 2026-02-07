@@ -312,13 +312,13 @@ func (d *HTTPAgentDispatcher) DispatchAgentCreate(ctx context.Context, agent *st
 	// Look up the local path for this grove on the target runtime broker
 	var grovePath string
 	if agent.GroveID != "" && agent.RuntimeBrokerID != "" {
-		contrib, err := d.store.GetGroveContributor(ctx, agent.GroveID, agent.RuntimeBrokerID)
+		provider, err := d.store.GetGroveProvider(ctx, agent.GroveID, agent.RuntimeBrokerID)
 		if err != nil {
 			if d.debug {
-				slog.Warn("Failed to get grove contributor for path lookup", "error", err)
+				slog.Warn("Failed to get grove provider for path lookup", "error", err)
 			}
-		} else if contrib.LocalPath != "" {
-			grovePath = contrib.LocalPath
+		} else if provider.LocalPath != "" {
+			grovePath = provider.LocalPath
 			if d.debug {
 				slog.Debug("Found grove path for broker", "brokerID", agent.RuntimeBrokerID, "path", grovePath)
 			}

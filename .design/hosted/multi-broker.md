@@ -59,9 +59,9 @@ For users running the co-located Hub/Broker (e.g., `scion server start --enable-
 
 The Hub already supports `runtimeBrokerId` in the `CreateAgentRequest`. The `resolveRuntimeBroker` helper in `pkg/hub/handlers.go` implements the resolution logic:
 
-1.  If `requestedBrokerId` is provided, verify it's a contributor.
+1.  If `requestedBrokerId` is provided, verify it's a provider.
 2.  Otherwise, use `grove.DefaultRuntimeBrokerId` if online.
-3.  If exactly one contributor exists, use it.
+3.  If exactly one provider exists, use it.
 4.  If ambiguous, return `422 Unprocessable Entity` with `ErrCodeNoRuntimeBroker` and the list of `availableBrokers` in the error details.
 
 ### 4.2. CLI Changes
@@ -92,4 +92,4 @@ Since agents are identified by name within a grove, and a runtime broker may be 
 *   **Guard Rails:** The Hub enforces agent name uniqueness within a grove.
 
 ### 5.2. Broker Authorization
-Only brokers that have registered as contributors to a grove can run agents for that grove. This is enforced by the Hub during the `resolveRuntimeBroker` phase.
+Only brokers that have registered as providers to a grove can run agents for that grove. This is enforced by the Hub during the `resolveRuntimeBroker` phase.

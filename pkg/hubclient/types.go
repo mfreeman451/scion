@@ -75,13 +75,13 @@ type Grove struct {
 	Visibility           string             `json:"visibility,omitempty"`
 	Labels               map[string]string  `json:"labels,omitempty"`
 	Annotations          map[string]string  `json:"annotations,omitempty"`
-	Contributors         []GroveContributor `json:"contributors,omitempty"`
+	Providers            []GroveProvider    `json:"providers,omitempty"`
 	AgentCount           int                `json:"agentCount,omitempty"`
 	ActiveBrokerCount      int                `json:"activeBrokerCount,omitempty"`
 }
 
-// GroveContributor represents a broker contributing to a grove.
-type GroveContributor struct {
+// GroveProvider represents a broker providing runtime services to a grove.
+type GroveProvider struct {
 	BrokerID   string    `json:"brokerId"`
 	BrokerName string    `json:"brokerName"`
 	Status     string    `json:"status"`

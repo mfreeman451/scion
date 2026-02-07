@@ -651,10 +651,10 @@ func TestUserList(t *testing.T) {
 }
 
 // ============================================================================
-// GroveContributor Tests
+// GroveProvider Tests
 // ============================================================================
 
-func TestGroveContributors(t *testing.T) {
+func TestGroveProviders(t *testing.T) {
 	s := setupTestStore(t)
 	ctx := context.Background()
 
@@ -691,42 +691,42 @@ func TestGroveContributors(t *testing.T) {
 	}
 	require.NoError(t, s.CreateRuntimeBroker(ctx, broker2))
 
-	// Add contributors with user tracking
-	contrib1 := &store.GroveContributor{
+	// Add providers with user tracking
+	provider1 := &store.GroveProvider{
 		GroveID:    grove.ID,
 		BrokerID:   broker1.ID,
 		BrokerName: broker1.Name,
 		Status:     store.BrokerStatusOnline,
 		LinkedBy:   "user-123",
 	}
-	require.NoError(t, s.AddGroveContributor(ctx, contrib1))
+	require.NoError(t, s.AddGroveProvider(ctx, provider1))
 
-	contrib2 := &store.GroveContributor{
+	provider2 := &store.GroveProvider{
 		GroveID:    grove.ID,
 		BrokerID:   broker2.ID,
 		BrokerName: broker2.Name,
 		Status:     store.BrokerStatusOnline,
 	}
-	require.NoError(t, s.AddGroveContributor(ctx, contrib2))
+	require.NoError(t, s.AddGroveProvider(ctx, provider2))
 
-	// Get grove contributors
-	contributors, err := s.GetGroveContributors(ctx, grove.ID)
+	// Get grove providers
+	providers, err := s.GetGroveProviders(ctx, grove.ID)
 	require.NoError(t, err)
-	assert.Len(t, contributors, 2)
+	assert.Len(t, providers, 2)
 
 	// Verify user tracking fields are stored
-	for _, c := range contributors {
-		if c.BrokerID == broker1.ID {
-			assert.Equal(t, "user-123", c.LinkedBy)
-			assert.False(t, c.LinkedAt.IsZero(), "LinkedAt should be set")
+	for _, p := range providers {
+		if p.BrokerID == broker1.ID {
+			assert.Equal(t, "user-123", p.LinkedBy)
+			assert.False(t, p.LinkedAt.IsZero(), "LinkedAt should be set")
 		}
 	}
 
-	// Verify GetGroveContributor also returns user tracking fields
-	contrib, err := s.GetGroveContributor(ctx, grove.ID, broker1.ID)
+	// Verify GetGroveProvider also returns user tracking fields
+	provider, err := s.GetGroveProvider(ctx, grove.ID, broker1.ID)
 	require.NoError(t, err)
-	assert.Equal(t, "user-123", contrib.LinkedBy)
-	assert.False(t, contrib.LinkedAt.IsZero(), "LinkedAt should be set")
+	assert.Equal(t, "user-123", provider.LinkedBy)
+	assert.False(t, provider.LinkedAt.IsZero(), "LinkedAt should be set")
 
 	// Get broker groves
 	groves, err := s.GetBrokerGroves(ctx, broker1.ID)
@@ -734,16 +734,16 @@ func TestGroveContributors(t *testing.T) {
 	assert.Len(t, groves, 1)
 	assert.Equal(t, grove.ID, groves[0].GroveID)
 
-	// Update contributor status
-	err = s.UpdateContributorStatus(ctx, grove.ID, broker1.ID, store.BrokerStatusOffline)
+	// Update provider status
+	err = s.UpdateProviderStatus(ctx, grove.ID, broker1.ID, store.BrokerStatusOffline)
 	require.NoError(t, err)
 
 	// Verify update
-	contributors, err = s.GetGroveContributors(ctx, grove.ID)
+	providers, err = s.GetGroveProviders(ctx, grove.ID)
 	require.NoError(t, err)
-	for _, c := range contributors {
-		if c.BrokerID == broker1.ID {
-			assert.Equal(t, store.BrokerStatusOffline, c.Status)
+	for _, p := range providers {
+		if p.BrokerID == broker1.ID {
+			assert.Equal(t, store.BrokerStatusOffline, p.Status)
 		}
 	}
 
@@ -752,14 +752,14 @@ func TestGroveContributors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, retrievedGrove.ActiveBrokerCount) // Only broker2 is online
 
-	// Remove contributor
-	err = s.RemoveGroveContributor(ctx, grove.ID, broker1.ID)
+	// Remove provider
+	err = s.RemoveGroveProvider(ctx, grove.ID, broker1.ID)
 	require.NoError(t, err)
 
-	contributors, err = s.GetGroveContributors(ctx, grove.ID)
+	providers, err = s.GetGroveProviders(ctx, grove.ID)
 	require.NoError(t, err)
-	assert.Len(t, contributors, 1)
-	assert.Equal(t, broker2.ID, contributors[0].BrokerID)
+	assert.Len(t, providers, 1)
+	assert.Equal(t, broker2.ID, providers[0].BrokerID)
 }
 
 // ============================================================================

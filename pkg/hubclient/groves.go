@@ -31,14 +31,14 @@ type GroveService interface {
 	// ListAgents returns agents in a grove.
 	ListAgents(ctx context.Context, groveID string, opts *ListAgentsOptions) (*ListAgentsResponse, error)
 
-	// ListContributors returns runtime brokers contributing to a grove.
-	ListContributors(ctx context.Context, groveID string) (*ListContributorsResponse, error)
+	// ListProviders returns runtime brokers providing services to a grove.
+	ListProviders(ctx context.Context, groveID string) (*ListProvidersResponse, error)
 
-	// AddContributor adds a broker as a contributor to a grove.
-	AddContributor(ctx context.Context, groveID string, req *AddContributorRequest) (*AddContributorResponse, error)
+	// AddProvider adds a broker as a provider to a grove.
+	AddProvider(ctx context.Context, groveID string, req *AddProviderRequest) (*AddProviderResponse, error)
 
-	// RemoveContributor removes a broker from a grove.
-	RemoveContributor(ctx context.Context, groveID, brokerID string) error
+	// RemoveProvider removes a broker from a grove.
+	RemoveProvider(ctx context.Context, groveID, brokerID string) error
 
 	// GetAgent returns an agent by ID or slug within a grove.
 	GetAgent(ctx context.Context, groveID, agentID string) (*Agent, error)
@@ -120,20 +120,20 @@ type UpdateGroveRequest struct {
 	Visibility  string            `json:"visibility,omitempty"`
 }
 
-// ListContributorsResponse is the response from listing grove contributors.
-type ListContributorsResponse struct {
-	Contributors []GroveContributor `json:"contributors"`
+// ListProvidersResponse is the response from listing grove providers.
+type ListProvidersResponse struct {
+	Providers []GroveProvider `json:"providers"`
 }
 
-// AddContributorRequest is the request for adding a broker as a grove contributor.
-type AddContributorRequest struct {
+// AddProviderRequest is the request for adding a broker as a grove provider.
+type AddProviderRequest struct {
 	BrokerID  string `json:"brokerId"`
 	LocalPath string `json:"localPath,omitempty"`
 }
 
-// AddContributorResponse is the response after adding a contributor.
-type AddContributorResponse struct {
-	Contributor *GroveContributor `json:"contributor"`
+// AddProviderResponse is the response after adding a provider.
+type AddProviderResponse struct {
+	Provider *GroveProvider `json:"provider"`
 }
 
 // List returns groves matching the filter criteria.
@@ -273,27 +273,27 @@ func (s *groveService) ListAgents(ctx context.Context, groveID string, opts *Lis
 	}, nil
 }
 
-// ListContributors returns runtime brokers contributing to a grove.
-func (s *groveService) ListContributors(ctx context.Context, groveID string) (*ListContributorsResponse, error) {
-	resp, err := s.c.transport.Get(ctx, "/api/v1/groves/"+groveID+"/contributors", nil)
+// ListProviders returns runtime brokers providing services to a grove.
+func (s *groveService) ListProviders(ctx context.Context, groveID string) (*ListProvidersResponse, error) {
+	resp, err := s.c.transport.Get(ctx, "/api/v1/groves/"+groveID+"/providers", nil)
 	if err != nil {
 		return nil, err
 	}
-	return apiclient.DecodeResponse[ListContributorsResponse](resp)
+	return apiclient.DecodeResponse[ListProvidersResponse](resp)
 }
 
-// AddContributor adds a broker as a contributor to a grove.
-func (s *groveService) AddContributor(ctx context.Context, groveID string, req *AddContributorRequest) (*AddContributorResponse, error) {
-	resp, err := s.c.transport.Post(ctx, "/api/v1/groves/"+groveID+"/contributors", req, nil)
+// AddProvider adds a broker as a provider to a grove.
+func (s *groveService) AddProvider(ctx context.Context, groveID string, req *AddProviderRequest) (*AddProviderResponse, error) {
+	resp, err := s.c.transport.Post(ctx, "/api/v1/groves/"+groveID+"/providers", req, nil)
 	if err != nil {
 		return nil, err
 	}
-	return apiclient.DecodeResponse[AddContributorResponse](resp)
+	return apiclient.DecodeResponse[AddProviderResponse](resp)
 }
 
-// RemoveContributor removes a broker from a grove.
-func (s *groveService) RemoveContributor(ctx context.Context, groveID, brokerID string) error {
-	resp, err := s.c.transport.Delete(ctx, "/api/v1/groves/"+groveID+"/contributors/"+brokerID, nil)
+// RemoveProvider removes a broker from a grove.
+func (s *groveService) RemoveProvider(ctx context.Context, groveID, brokerID string) error {
+	resp, err := s.c.transport.Delete(ctx, "/api/v1/groves/"+groveID+"/providers/"+brokerID, nil)
 	if err != nil {
 		return err
 	}

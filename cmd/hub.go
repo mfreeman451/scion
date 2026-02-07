@@ -830,9 +830,9 @@ func runHubRegister(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// If grove is linked, offer to add this broker as a contributor
+	// If grove is linked, offer to add this broker as a provider
 	if groveID != "" && settings.IsHubEnabled() {
-		if hubsync.ShowGroveContributorPrompt(groveName, autoConfirm) {
+		if hubsync.ShowGroveProviderPrompt(groveName, autoConfirm) {
 			req := &hubclient.RegisterGroveRequest{
 				ID:       groveID,
 				Name:     groveName,
@@ -847,7 +847,7 @@ func runHubRegister(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				fmt.Printf("Warning: failed to add broker to grove: %v\n", err)
 			} else {
-				fmt.Printf("Broker added as contributor to grove '%s'\n", resp.Grove.Name)
+				fmt.Printf("Broker added as provider to grove '%s'\n", resp.Grove.Name)
 			}
 		}
 	}

@@ -1795,27 +1795,27 @@ func (s *SQLiteStore) ListUsers(ctx context.Context, filter store.UserFilter, op
 }
 
 // ============================================================================
-// GroveContributor Operations
+// GroveProvider Operations
 // ============================================================================
 
-func (s *SQLiteStore) AddGroveContributor(ctx context.Context, contrib *store.GroveContributor) error {
+func (s *SQLiteStore) AddGroveProvider(ctx context.Context, provider *store.GroveProvider) error {
 	// Set LinkedAt to now if not already set
-	if contrib.LinkedAt.IsZero() && contrib.LinkedBy != "" {
-		contrib.LinkedAt = time.Now()
+	if provider.LinkedAt.IsZero() && provider.LinkedBy != "" {
+		provider.LinkedAt = time.Now()
 	}
 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT OR REPLACE INTO grove_contributors (grove_id, broker_id, broker_name, local_path, mode, status, profiles, last_seen, linked_by, linked_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		contrib.GroveID, contrib.BrokerID, contrib.BrokerName, contrib.LocalPath, "", contrib.Status,
-		"[]", contrib.LastSeen, // profiles column kept for schema compat but no longer used
-		nullableString(contrib.LinkedBy), nullableTime(contrib.LinkedAt),
+		provider.GroveID, provider.BrokerID, provider.BrokerName, provider.LocalPath, "", provider.Status,
+		"[]", provider.LastSeen, // profiles column kept for schema compat but no longer used
+		nullableString(provider.LinkedBy), nullableTime(provider.LinkedAt),
 	)
 	return err
 }
 
-func (s *SQLiteStore) RemoveGroveContributor(ctx context.Context, groveID, brokerID string) error {
+func (s *SQLiteStore) RemoveGroveProvider(ctx context.Context, groveID, brokerID string) error {
 	result, err := s.db.ExecContext(ctx, "DELETE FROM grove_contributors WHERE grove_id = ? AND broker_id = ?", groveID, brokerID)
 	if err != nil {
 		return err
@@ -1830,17 +1830,17 @@ func (s *SQLiteStore) RemoveGroveContributor(ctx context.Context, groveID, broke
 	return nil
 }
 
-func (s *SQLiteStore) GetGroveContributor(ctx context.Context, groveID, brokerID string) (*store.GroveContributor, error) {
-	var contrib store.GroveContributor
+func (s *SQLiteStore) GetGroveProvider(ctx context.Context, groveID, brokerID string) (*store.GroveProvider, error) {
+	var provider store.GroveProvider
 	var localPath, linkedBy sql.NullString
-	var contribMode, profiles string // unused columns kept for schema compat
+	var providerMode, profiles string // unused columns kept for schema compat
 	var lastSeen, linkedAt sql.NullTime
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT grove_id, broker_id, broker_name, local_path, mode, status, profiles, last_seen, linked_by, linked_at
 		FROM grove_contributors WHERE grove_id = ? AND broker_id = ?
 	`, groveID, brokerID).Scan(
-		&contrib.GroveID, &contrib.BrokerID, &contrib.BrokerName, &localPath, &contribMode, &contrib.Status,
+		&provider.GroveID, &provider.BrokerID, &provider.BrokerName, &localPath, &providerMode, &provider.Status,
 		&profiles, &lastSeen, &linkedBy, &linkedAt,
 	)
 	if err != nil {
@@ -1851,23 +1851,23 @@ func (s *SQLiteStore) GetGroveContributor(ctx context.Context, groveID, brokerID
 	}
 
 	if localPath.Valid {
-		contrib.LocalPath = localPath.String
+		provider.LocalPath = localPath.String
 	}
 	if lastSeen.Valid {
-		contrib.LastSeen = lastSeen.Time
+		provider.LastSeen = lastSeen.Time
 	}
 	if linkedBy.Valid {
-		contrib.LinkedBy = linkedBy.String
+		provider.LinkedBy = linkedBy.String
 	}
 	if linkedAt.Valid {
-		contrib.LinkedAt = linkedAt.Time
+		provider.LinkedAt = linkedAt.Time
 	}
 	// profiles column no longer used - lookup from RuntimeBroker.Profiles instead
 
-	return &contrib, nil
+	return &provider, nil
 }
 
-func (s *SQLiteStore) GetGroveContributors(ctx context.Context, groveID string) ([]store.GroveContributor, error) {
+func (s *SQLiteStore) GetGroveProviders(ctx context.Context, groveID string) ([]store.GroveProvider, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT grove_id, broker_id, broker_name, local_path, mode, status, profiles, last_seen, linked_by, linked_at
 		FROM grove_contributors WHERE grove_id = ?
@@ -1877,41 +1877,41 @@ func (s *SQLiteStore) GetGroveContributors(ctx context.Context, groveID string) 
 	}
 	defer rows.Close()
 
-	var contributors []store.GroveContributor
+	var providers []store.GroveProvider
 	for rows.Next() {
-		var contrib store.GroveContributor
+		var provider store.GroveProvider
 		var localPath, linkedBy sql.NullString
-		var contribMode, profiles string // unused columns kept for schema compat
+		var providerMode, profiles string // unused columns kept for schema compat
 		var lastSeen, linkedAt sql.NullTime
 
 		if err := rows.Scan(
-			&contrib.GroveID, &contrib.BrokerID, &contrib.BrokerName, &localPath, &contribMode, &contrib.Status,
+			&provider.GroveID, &provider.BrokerID, &provider.BrokerName, &localPath, &providerMode, &provider.Status,
 			&profiles, &lastSeen, &linkedBy, &linkedAt,
 		); err != nil {
 			return nil, err
 		}
 
 		if localPath.Valid {
-			contrib.LocalPath = localPath.String
+			provider.LocalPath = localPath.String
 		}
 		if lastSeen.Valid {
-			contrib.LastSeen = lastSeen.Time
+			provider.LastSeen = lastSeen.Time
 		}
 		if linkedBy.Valid {
-			contrib.LinkedBy = linkedBy.String
+			provider.LinkedBy = linkedBy.String
 		}
 		if linkedAt.Valid {
-			contrib.LinkedAt = linkedAt.Time
+			provider.LinkedAt = linkedAt.Time
 		}
 		// profiles column no longer used - lookup from RuntimeBroker.Profiles instead
 
-		contributors = append(contributors, contrib)
+		providers = append(providers, provider)
 	}
 
-	return contributors, nil
+	return providers, nil
 }
 
-func (s *SQLiteStore) GetBrokerGroves(ctx context.Context, brokerID string) ([]store.GroveContributor, error) {
+func (s *SQLiteStore) GetBrokerGroves(ctx context.Context, brokerID string) ([]store.GroveProvider, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT grove_id, broker_id, broker_name, local_path, mode, status, profiles, last_seen, linked_by, linked_at
 		FROM grove_contributors WHERE broker_id = ?
@@ -1921,41 +1921,41 @@ func (s *SQLiteStore) GetBrokerGroves(ctx context.Context, brokerID string) ([]s
 	}
 	defer rows.Close()
 
-	var contributors []store.GroveContributor
+	var providers []store.GroveProvider
 	for rows.Next() {
-		var contrib store.GroveContributor
+		var provider store.GroveProvider
 		var localPath, linkedBy sql.NullString
-		var contribMode, profiles string // unused columns kept for schema compat
+		var providerMode, profiles string // unused columns kept for schema compat
 		var lastSeen, linkedAt sql.NullTime
 
 		if err := rows.Scan(
-			&contrib.GroveID, &contrib.BrokerID, &contrib.BrokerName, &localPath, &contribMode, &contrib.Status,
+			&provider.GroveID, &provider.BrokerID, &provider.BrokerName, &localPath, &providerMode, &provider.Status,
 			&profiles, &lastSeen, &linkedBy, &linkedAt,
 		); err != nil {
 			return nil, err
 		}
 
 		if localPath.Valid {
-			contrib.LocalPath = localPath.String
+			provider.LocalPath = localPath.String
 		}
 		if lastSeen.Valid {
-			contrib.LastSeen = lastSeen.Time
+			provider.LastSeen = lastSeen.Time
 		}
 		if linkedBy.Valid {
-			contrib.LinkedBy = linkedBy.String
+			provider.LinkedBy = linkedBy.String
 		}
 		if linkedAt.Valid {
-			contrib.LinkedAt = linkedAt.Time
+			provider.LinkedAt = linkedAt.Time
 		}
 		// profiles column no longer used - lookup from RuntimeBroker.Profiles instead
 
-		contributors = append(contributors, contrib)
+		providers = append(providers, provider)
 	}
 
-	return contributors, nil
+	return providers, nil
 }
 
-func (s *SQLiteStore) UpdateContributorStatus(ctx context.Context, groveID, brokerID, status string) error {
+func (s *SQLiteStore) UpdateProviderStatus(ctx context.Context, groveID, brokerID, status string) error {
 	now := time.Now()
 
 	result, err := s.db.ExecContext(ctx, `

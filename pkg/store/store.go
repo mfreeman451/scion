@@ -40,8 +40,8 @@ type Store interface {
 	// User operations
 	UserStore
 
-	// GroveContributor operations
-	GroveContributorStore
+	// GroveProvider operations
+	GroveProviderStore
 
 	// EnvVar operations
 	EnvVarStore
@@ -261,26 +261,26 @@ type UserFilter struct {
 	Status string
 }
 
-// GroveContributorStore defines grove-broker relationship operations.
-type GroveContributorStore interface {
-	// AddGroveContributor adds a broker as a contributor to a grove.
-	AddGroveContributor(ctx context.Context, contrib *GroveContributor) error
+// GroveProviderStore defines grove-broker relationship operations.
+type GroveProviderStore interface {
+	// AddGroveProvider adds a broker as a provider to a grove.
+	AddGroveProvider(ctx context.Context, provider *GroveProvider) error
 
-	// RemoveGroveContributor removes a broker from a grove's contributors.
-	RemoveGroveContributor(ctx context.Context, groveID, brokerID string) error
+	// RemoveGroveProvider removes a broker from a grove's providers.
+	RemoveGroveProvider(ctx context.Context, groveID, brokerID string) error
 
-	// GetGroveContributor returns a specific contributor by grove and broker ID.
-	// Returns ErrNotFound if the contributor relationship doesn't exist.
-	GetGroveContributor(ctx context.Context, groveID, brokerID string) (*GroveContributor, error)
+	// GetGroveProvider returns a specific provider by grove and broker ID.
+	// Returns ErrNotFound if the provider relationship doesn't exist.
+	GetGroveProvider(ctx context.Context, groveID, brokerID string) (*GroveProvider, error)
 
-	// GetGroveContributors returns all contributors to a grove.
-	GetGroveContributors(ctx context.Context, groveID string) ([]GroveContributor, error)
+	// GetGroveProviders returns all providers to a grove.
+	GetGroveProviders(ctx context.Context, groveID string) ([]GroveProvider, error)
 
-	// GetBrokerGroves returns all groves a broker contributes to.
-	GetBrokerGroves(ctx context.Context, brokerID string) ([]GroveContributor, error)
+	// GetBrokerGroves returns all groves a broker provides for.
+	GetBrokerGroves(ctx context.Context, brokerID string) ([]GroveProvider, error)
 
-	// UpdateContributorStatus updates a contributor's status and last seen time.
-	UpdateContributorStatus(ctx context.Context, groveID, brokerID, status string) error
+	// UpdateProviderStatus updates a provider's status and last seen time.
+	UpdateProviderStatus(ctx context.Context, groveID, brokerID, status string) error
 }
 
 // EnvVarStore defines environment variable persistence operations.
