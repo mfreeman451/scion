@@ -569,8 +569,8 @@ func runBrokerStart(cmd *cobra.Command, args []string) error {
 
 	// Foreground mode - just run the server command directly
 	if brokerStartForeground {
-		// Build args for server start
-		serverArgs := []string{"server", "start", "--enable-runtime-broker"}
+		// Build args for server start (just the flags, no command names)
+		serverArgs := []string{"--enable-runtime-broker"}
 		if brokerStartPort != DefaultBrokerPort {
 			serverArgs = append(serverArgs, fmt.Sprintf("--runtime-broker-port=%d", brokerStartPort))
 		}
@@ -585,8 +585,11 @@ func runBrokerStart(cmd *cobra.Command, args []string) error {
 		fmt.Println("Press Ctrl+C to stop.")
 		fmt.Println()
 
-		// Run the server start command directly
-		serverStartCmd.SetArgs(serverArgs[2:]) // Skip "server" and "start"
+		// Parse the flags for serverStartCmd before calling RunE
+		// (SetArgs only works with Execute, not RunE)
+		if err := serverStartCmd.ParseFlags(serverArgs); err != nil {
+			return fmt.Errorf("failed to parse server flags: %w", err)
+		}
 		return serverStartCmd.RunE(serverStartCmd, []string{})
 	}
 
