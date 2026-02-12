@@ -562,6 +562,17 @@ type DeviceCodeResponse struct {
 	Interval                int    `json:"interval"`
 }
 
+// googleDeviceCodeResponse handles Google's non-standard field naming.
+// Google returns "verification_url" instead of the RFC 8628 "verification_uri".
+type googleDeviceCodeResponse struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURL         string `json:"verification_url"`
+	VerificationURIComplete string `json:"verification_uri_complete,omitempty"`
+	ExpiresIn               int    `json:"expires_in"`
+	Interval                int    `json:"interval"`
+}
+
 // DeviceAuthError represents a non-success state from device token polling.
 type DeviceAuthError struct {
 	Code     string // "authorization_pending", "slow_down", "expired_token"
@@ -613,12 +624,20 @@ func (s *OAuthService) requestGoogleDeviceCode(ctx context.Context, cfg OAuthPro
 		return nil, fmt.Errorf("device code request failed: %s - %s", resp.Status, string(body))
 	}
 
-	var result DeviceCodeResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	// Google returns "verification_url" instead of the RFC 8628 "verification_uri"
+	var gResult googleDeviceCodeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&gResult); err != nil {
 		return nil, fmt.Errorf("failed to decode device code response: %w", err)
 	}
 
-	return &result, nil
+	return &DeviceCodeResponse{
+		DeviceCode:              gResult.DeviceCode,
+		UserCode:                gResult.UserCode,
+		VerificationURI:         gResult.VerificationURL,
+		VerificationURIComplete: gResult.VerificationURIComplete,
+		ExpiresIn:               gResult.ExpiresIn,
+		Interval:                gResult.Interval,
+	}, nil
 }
 
 func (s *OAuthService) requestGitHubDeviceCode(ctx context.Context, cfg OAuthProviderConfig) (*DeviceCodeResponse, error) {
