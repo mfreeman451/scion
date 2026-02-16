@@ -18,6 +18,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var machineInit bool
+
 // initCmd represents the init command
 var initCmd = &cobra.Command{
 	Use:   "init",
@@ -31,11 +33,13 @@ By default, it initializes in:
 - The root of the current git repo if run inside a repo
 - The current directory
 
-With --global, it initializes in the user's home folder.`,
+With --global or --machine, it performs full machine-level setup
+(seeds harness-configs, templates, settings) in the user's home folder.`,
 	RunE: groveInitCmd.RunE,
 }
 
 func init() {
 	rootCmd.AddCommand(initCmd)
 	initCmd.Flags().BoolVar(&globalInit, "global", false, "Initialize the global grove in the home directory")
+	initCmd.Flags().BoolVar(&machineInit, "machine", false, "Perform full machine-level setup (seeds harness-configs, templates, settings)")
 }

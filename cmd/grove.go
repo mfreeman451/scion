@@ -55,11 +55,11 @@ With --global, it initializes in the user's home folder.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		harnesses := harness.All()
 
-		if globalInit {
+		if globalInit || machineInit {
 			if !isJSONOutput() {
 				fmt.Println("Initializing global scion directory...")
 			}
-			if err := config.InitGlobal(harnesses); err != nil {
+			if err := config.InitMachine(harnesses); err != nil {
 				return fmt.Errorf("failed to initialize global config: %w", err)
 			}
 
@@ -68,7 +68,7 @@ With --global, it initializes in the user's home folder.`,
 					Status:  "success",
 					Command: "grove init",
 					Message: "scion grove successfully initialized.",
-					Details: map[string]interface{}{"global": true},
+					Details: map[string]interface{}{"global": true, "machine": true},
 				})
 			}
 
@@ -81,6 +81,14 @@ With --global, it initializes in the user's home folder.`,
 			}
 
 			return nil
+		}
+
+		// Check if ~/.scion/ exists; if not, print guidance
+		if globalDir, err := config.GetGlobalDir(); err == nil {
+			if _, err := os.Stat(globalDir); os.IsNotExist(err) {
+				fmt.Fprintf(os.Stderr, "Warning: Global scion directory (~/.scion/) does not exist.\n")
+				fmt.Fprintf(os.Stderr, "Run 'scion init --machine' first for full machine-level setup.\n\n")
+			}
 		}
 
 		// Check for nested grove - error if already inside a scion project
@@ -343,4 +351,5 @@ func init() {
 	groveCmd.AddCommand(groveInitCmd)
 
 	groveInitCmd.Flags().BoolVar(&globalInit, "global", false, "Initialize the global grove in the home directory")
+	groveInitCmd.Flags().BoolVar(&machineInit, "machine", false, "Perform full machine-level setup (seeds harness-configs, templates, settings)")
 }

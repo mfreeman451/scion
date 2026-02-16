@@ -85,7 +85,6 @@ func GetDefaultSettingsData() ([]byte, error) {
 // SeedCommonFiles seeds the common files for a harness template.
 // It creates the base directory structure and writes only common files
 // (.tmux.conf, .zshrc) that are shared across all harnesses.
-// Harness-specific file seeding is handled by each harness's SeedTemplateDir().
 func SeedCommonFiles(templateDir, configDirName string, force bool) error {
 	homeDir := filepath.Join(templateDir, "home")
 	// Create directories
@@ -344,7 +343,6 @@ func InitProject(targetDir string, harnesses []api.Harness) error {
 
 	templatesDir := filepath.Join(projectDir, "templates")
 	agentsDir := filepath.Join(projectDir, "agents")
-	harnessConfigsDir := filepath.Join(projectDir, harnessConfigsDirName)
 
 	if err := os.MkdirAll(agentsDir, 0755); err != nil {
 		return fmt.Errorf("failed to create agents directory: %w", err)
@@ -355,21 +353,12 @@ func InitProject(targetDir string, harnesses []api.Harness) error {
 		return fmt.Errorf("failed to seed default agnostic template: %w", err)
 	}
 
-	for _, h := range harnesses {
-		// Seed harness-config directory
-		if err := SeedHarnessConfig(filepath.Join(harnessConfigsDir, h.Name()), h, false); err != nil {
-			return fmt.Errorf("failed to seed %s harness-config: %w", h.Name(), err)
-		}
-		// Keep existing template seeding for backward compatibility
-		if err := h.SeedTemplateDir(filepath.Join(templatesDir, h.Name()), false); err != nil {
-			return fmt.Errorf("failed to seed %s template: %w", h.Name(), err)
-		}
-	}
-
 	return nil
 }
 
-func InitGlobal(harnesses []api.Harness) error {
+// InitMachine performs full global/machine-level setup: creates ~/.scion/,
+// seeds settings, harness-configs, and the default agnostic template.
+func InitMachine(harnesses []api.Harness) error {
 	globalDir, err := GetGlobalDir()
 	if err != nil {
 		return err
@@ -415,11 +404,12 @@ func InitGlobal(harnesses []api.Harness) error {
 		if err := SeedHarnessConfig(filepath.Join(harnessConfigsDir, h.Name()), h, false); err != nil {
 			return fmt.Errorf("failed to seed global %s harness-config: %w", h.Name(), err)
 		}
-		// Keep existing template seeding for backward compatibility
-		if err := h.SeedTemplateDir(filepath.Join(templatesDir, h.Name()), false); err != nil {
-			return fmt.Errorf("failed to seed global %s template: %w", h.Name(), err)
-		}
 	}
 
 	return nil
+}
+
+// InitGlobal is an alias for InitMachine, kept for backward compatibility.
+func InitGlobal(harnesses []api.Harness) error {
+	return InitMachine(harnesses)
 }

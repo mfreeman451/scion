@@ -30,45 +30,6 @@ type MockHarness struct {
 }
 
 func (m *MockHarness) Name() string { return m.NameVal }
-func (m *MockHarness) SeedTemplateDir(dir string, force bool) error {
-	if err := SeedCommonFiles(dir, m.ConfigDirVal, force); err != nil {
-		return err
-	}
-
-	// Write stub harness-specific files that tests expect
-	homeDir := filepath.Join(dir, "home")
-
-	// scion-agent.yaml
-	scionAgentContent := "harness: " + m.NameVal + "\n"
-	scionAgentPath := filepath.Join(dir, "scion-agent.yaml")
-	if _, err := os.Stat(scionAgentPath); os.IsNotExist(err) || force {
-		if err := os.WriteFile(scionAgentPath, []byte(scionAgentContent), 0644); err != nil {
-			return err
-		}
-	}
-
-	// .bashrc
-	bashrcPath := filepath.Join(homeDir, ".bashrc")
-	if _, err := os.Stat(bashrcPath); os.IsNotExist(err) || force {
-		if err := os.WriteFile(bashrcPath, []byte("# mock bashrc\n"), 0644); err != nil {
-			return err
-		}
-	}
-
-	// settings.json (if harness has a config dir)
-	if m.ConfigDirVal != "" {
-		settingsPath := filepath.Join(homeDir, m.ConfigDirVal, "settings.json")
-		if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
-			return err
-		}
-		// Always write settings.json
-		if err := os.WriteFile(settingsPath, []byte("{}\n"), 0644); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
 func (m *MockHarness) DiscoverAuth(agentHome string) api.AuthConfig { return api.AuthConfig{} }
 func (m *MockHarness) GetEnv(agentName string, agentHome string, unixUsername string, auth api.AuthConfig) map[string]string {
 	return nil

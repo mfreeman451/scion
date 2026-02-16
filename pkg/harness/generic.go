@@ -28,10 +28,6 @@ import (
 
 type Generic struct{}
 
-func (g *Generic) SeedTemplateDir(templateDir string, force bool) error {
-	return config.SeedCommonFiles(templateDir, g.DefaultConfigDir(), force)
-}
-
 func (g *Generic) Name() string {
 	return "generic"
 }

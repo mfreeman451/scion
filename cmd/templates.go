@@ -369,14 +369,8 @@ var templatesCreateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		global, _ := cmd.Flags().GetBool("global")
-		harnessName, _ := cmd.Flags().GetString("harness")
-		if harnessName == "" {
-			harnessName = "gemini"
-		}
 
-		h := harness.New(harnessName)
-
-		err := config.CreateTemplate(name, h, global)
+		err := config.CreateTemplate(name, global)
 		if err != nil {
 			return err
 		}
@@ -386,9 +380,8 @@ var templatesCreateCmd = &cobra.Command{
 				Command: "templates create",
 				Message: fmt.Sprintf("Template %s created successfully.", name),
 				Details: map[string]interface{}{
-					"name":    name,
-					"harness": harnessName,
-					"global":  global,
+					"name":   name,
+					"global": global,
 				},
 			})
 		}
@@ -1131,9 +1124,6 @@ func init() {
 	templatesImportCmd.Flags().Bool("force", false, "Overwrite existing templates")
 	templatesImportCmd.Flags().Bool("dry-run", false, "Preview import without writing files")
 	templatesImportCmd.Flags().Bool("all", false, "Import all discovered agents")
-
-	// Flags for create command
-	templatesCreateCmd.Flags().StringP("harness", "H", "", "Harness type (e.g. gemini, claude)")
 
 	// Flags for sync command (--global is inherited from root)
 	templatesSyncCmd.Flags().String("name", "", "Name for the template on the Hub (defaults to local template name)")

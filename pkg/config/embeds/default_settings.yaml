@@ -48,25 +48,6 @@ runtimes:
     context: ""
     namespace: ""
 
-# Harness configurations
-harness_configs:
-  gemini:
-    harness: gemini
-    image: us-central1-docker.pkg.dev/ptone-misc/public-docker/scion-gemini:latest
-    user: scion
-  claude:
-    harness: claude
-    image: us-central1-docker.pkg.dev/ptone-misc/public-docker/scion-claude:latest
-    user: scion
-  opencode:
-    harness: opencode
-    image: us-central1-docker.pkg.dev/ptone-misc/public-docker/scion-opencode:latest
-    user: scion
-  codex:
-    harness: codex
-    image: us-central1-docker.pkg.dev/ptone-misc/public-docker/scion-codex:latest
-    user: scion
-
 # Profiles combine runtime with optional overrides
 profiles:
   local:

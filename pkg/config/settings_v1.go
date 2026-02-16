@@ -32,16 +32,14 @@ import (
 )
 
 // ResolveHarnessConfig looks up a named harness config and merges profile-level overrides.
-// If profileName is empty, ActiveProfile is used. If the config name is not found, an error is returned.
+// If profileName is empty, ActiveProfile is used. If the config name is not found in the
+// settings map, an empty HarnessConfigEntry is used as the base (profile overrides still apply).
 func (vs *VersionedSettings) ResolveHarnessConfig(profileName, harnessConfigName string) (HarnessConfigEntry, error) {
 	if profileName == "" {
 		profileName = vs.ActiveProfile
 	}
 
-	baseConfig, ok := vs.HarnessConfigs[harnessConfigName]
-	if !ok {
-		return HarnessConfigEntry{}, fmt.Errorf("harness config %q not found", harnessConfigName)
-	}
+	baseConfig := vs.HarnessConfigs[harnessConfigName]
 
 	profile, ok := vs.Profiles[profileName]
 	if !ok {

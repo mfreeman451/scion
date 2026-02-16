@@ -20,14 +20,14 @@ import (
 	"path/filepath"
 
 	"github.com/ptone/scion-agent/pkg/api"
-	"github.com/ptone/scion-agent/pkg/harness"
+	"github.com/ptone/scion-agent/pkg/config"
 	"gopkg.in/yaml.v3"
 )
 
 // WriteTemplate creates a scion template directory from an ImportedAgent.
-// It seeds the base template using the harness's SeedTemplateDir, then overwrites
-// the instruction file with the imported system prompt and updates scion-agent.yaml
-// with the model from the import.
+// It seeds the base agnostic template, then overwrites the instruction file
+// with the imported system prompt and updates scion-agent.yaml with the model
+// from the import.
 // Returns the path to the created template directory.
 func WriteTemplate(agent *ImportedAgent, templatesDir string, force bool) (string, error) {
 	templateDir := filepath.Join(templatesDir, agent.Name)
@@ -44,9 +44,8 @@ func WriteTemplate(agent *ImportedAgent, templatesDir string, force bool) (strin
 		_ = os.RemoveAll(templateDir)
 	}
 
-	// Seed the base template using the harness
-	h := harness.New(agent.Harness)
-	if err := h.SeedTemplateDir(templateDir, true); err != nil {
+	// Seed the base agnostic template
+	if err := config.SeedAgnosticTemplate(templateDir, true); err != nil {
 		return "", fmt.Errorf("failed to seed template directory: %w", err)
 	}
 

@@ -309,7 +309,7 @@ func GetTemplateChainInGrove(name, grovePath string) ([]*Template, error) {
 	return chain, nil
 }
 
-func CreateTemplate(name string, h api.Harness, global bool) error {
+func CreateTemplate(name string, global bool) error {
 	var templatesDir string
 	var err error
 
@@ -328,7 +328,7 @@ func CreateTemplate(name string, h api.Harness, global bool) error {
 		return fmt.Errorf("template %s already exists at %s", name, templateDir)
 	}
 
-	return h.SeedTemplateDir(templateDir, false)
+	return SeedAgnosticTemplate(templateDir, false)
 }
 
 func CloneTemplate(srcName, destName string, global bool) error {
@@ -361,20 +361,39 @@ func CloneTemplate(srcName, destName string, global bool) error {
 
 func UpdateDefaultTemplates(global bool, harnesses []api.Harness) error {
 	var templatesDir string
+	var harnessConfigsDir string
 	var err error
 
 	if global {
 		templatesDir, err = GetGlobalTemplatesDir()
+		if err != nil {
+			return err
+		}
+		globalDir, err := GetGlobalDir()
+		if err != nil {
+			return err
+		}
+		harnessConfigsDir = filepath.Join(globalDir, harnessConfigsDirName)
 	} else {
 		templatesDir, err = GetProjectTemplatesDir()
+		if err != nil {
+			return err
+		}
+		projectDir, err := GetProjectDir()
+		if err != nil {
+			return err
+		}
+		harnessConfigsDir = filepath.Join(projectDir, harnessConfigsDirName)
 	}
 
-	if err != nil {
+	// Update default agnostic template
+	if err := SeedAgnosticTemplate(filepath.Join(templatesDir, "default"), true); err != nil {
 		return err
 	}
 
+	// Update harness-configs
 	for _, h := range harnesses {
-		if err := h.SeedTemplateDir(filepath.Join(templatesDir, h.Name()), true); err != nil {
+		if err := SeedHarnessConfig(filepath.Join(harnessConfigsDir, h.Name()), h, true); err != nil {
 			return err
 		}
 	}
