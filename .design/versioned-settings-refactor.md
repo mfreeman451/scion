@@ -1,7 +1,7 @@
 # Versioned Settings Refactor: Design & Transition Plan
 
-## Status: Draft
-## Date: 2026-02-15
+## Status: Draft (Revised)
+## Date: 2026-02-16
 ## Supersedes: `.design/_archive/settings-refactor.md`
 
 ---
@@ -20,6 +20,8 @@ The current settings system evolved organically and has several structural probl
 
 5. **No deprecation path.** Changing the settings structure would silently break existing users. There is no mechanism to detect legacy vs modern settings, warn about deprecated fields, or guide migration.
 
+6. **Inconsistent field naming.** The current code mixes camelCase koanf tags (`groveId`, `apiKey`, `brokerNickname`) with snake_case tags (`active_profile`, `grove_id`, `local_only`). Some env var overrides (e.g., `SCION_HUB_GROVE_ID`, `SCION_HUB_BROKER_NICKNAME`) do not work because the Koanf key mapping produces snake_case keys that don't match the camelCase struct tags. The versioned settings will standardize on snake_case everywhere.
+
 ---
 
 ## 2. Target Settings Groups
@@ -32,27 +34,40 @@ Server/broker process configuration. Only valid at the global level (`~/.scion/s
 
 ```yaml
 server:
-  broker_id: "uuid-string"
-  env: prod                        # deployment environment label
-  hub:                             # hub server settings (when running scion-server)
+  env: prod                        # deployment environment label (new)
+  hub:                             # hub API server settings (when running scion-server)
     port: 9810
     host: "0.0.0.0"
-    endpoint: "https://hub.example.com"
+    # public_url is the externally-reachable URL for this Hub server.
+    # Passed to agents so they can report status back. Distinct from
+    # the hub CLIENT endpoint (Section 2.2) which is where clients connect.
+    public_url: "https://hub.example.com"
     read_timeout: 30s
     write_timeout: 60s
     cors:
       enabled: true
       allowed_origins: ["*"]
       allowed_methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-      allowed_headers: ["Authorization", "Content-Type"]
+      allowed_headers: ["Authorization", "Content-Type", "X-Scion-Broker-Token", "X-Scion-Agent-Token", "X-API-Key"]
       max_age: 3600
     admin_emails: []
   runtime_broker:
     enabled: false
     port: 9800
     host: "0.0.0.0"
-    hub_endpoint: ""
-    broker_name: ""
+    read_timeout: 30s
+    write_timeout: 120s
+    hub_endpoint: ""               # Hub API endpoint for status reporting (when Hub is remote)
+    broker_id: ""                  # unique broker identifier (UUID, auto-generated if empty)
+    broker_name: ""                # human-readable broker name
+    broker_nickname: ""            # human-readable display name (defaults to hostname)
+    broker_token: ""               # token received when registering with Hub
+    cors:
+      enabled: true
+      allowed_origins: ["*"]
+      allowed_methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+      allowed_headers: ["Authorization", "Content-Type", "X-Scion-Broker-Token", "X-API-Key"]
+      max_age: 3600
   database:
     driver: sqlite
     url: ""
@@ -83,6 +98,13 @@ server:
   log_format: text
 ```
 
+**Changes from original draft:**
+- `broker_id` moved from server top-level into `server.runtime_broker` (where it already lives in the current `RuntimeBrokerConfig` struct).
+- `broker_nickname` and `broker_token` moved from `hub` client section (Section 2.2) into `server.runtime_broker`. These fields describe this machine's identity as a broker and are inherently machine-scoped (global-only), not per-grove.
+- `server.hub.endpoint` renamed to `server.hub.public_url` to distinguish from the hub CLIENT endpoint.
+- `server.runtime_broker` now includes `read_timeout`, `write_timeout`, and full CORS settings to match the current `RuntimeBrokerConfig` struct.
+- CORS `allowed_headers` defaults updated to match actual code (includes `X-Scion-Broker-Token`, `X-Scion-Agent-Token`, `X-API-Key`).
+
 **Rationale:** This consolidates the current `GlobalConfig`/`server.yaml` system into the unified settings file. The separate `server.yaml` continues to work during the transition but the canonical location becomes `settings.yaml` under the `server` key.
 
 ### 2.2 `hub` (hub client)
@@ -92,15 +114,19 @@ Settings for connecting to a remote Scion Hub as a client. Valid at global or gr
 ```yaml
 hub:
   enabled: true
-  endpoint: "https://hub.example.com"
-  token: ""
-  api_key: ""
-  grove_id: ""
-  broker_id: ""
-  broker_nickname: ""
-  broker_token: ""
-  local_only: false
+  endpoint: "https://hub.example.com"   # Hub API URL to connect to (as a client)
+  token: ""                              # bearer token for Hub auth (see Open Question 1)
+  api_key: ""                            # API key for Hub auth (alternative to token)
+  grove_id: ""                           # grove identifier from Hub registration
+  local_only: false                      # operate in local-only mode even when Hub is configured
+  last_synced_at: ""                     # RFC3339 timestamp of last successful Hub sync (runtime-managed)
 ```
+
+**Changes from original draft:**
+- `broker_id`, `broker_nickname`, `broker_token` moved to `server.runtime_broker` (Section 2.1). Broker identity is per-machine, not per-grove.
+- `last_synced_at` added. This field exists in the current `HubClientConfig` and is written back to settings by the sync logic. It tracks when this grove last synced with the Hub, used to distinguish locally-deleted agents from remotely-created ones.
+
+**Note:** The `hub.endpoint` field is the URL this CLI/broker connects to as a Hub client. This is distinct from `server.hub.public_url`, which is the public-facing URL of a Hub server process (used for agent callback URLs). They often have the same value but serve different roles.
 
 ### 2.3 `cli`
 
@@ -116,9 +142,11 @@ cli:
 
 Container runtime definitions. Valid at global or grove level.
 
+The name of a runtime entry is an arbitrary label chosen by the user — it does **not** need to match the `type` field. This allows defining multiple runtimes of the same type with different configurations (e.g., `staging-docker` and `prod-docker` both with `type: docker`).
+
 ```yaml
 runtimes:
-  docker:
+  docker:                          # name matches type (conventional default)
     type: docker
     host: ""
     env: {}
@@ -130,9 +158,14 @@ runtimes:
     type: kubernetes
     context: ""
     namespace: ""
+  staging-docker:                  # name differs from type
+    type: docker
+    host: "tcp://staging.example.com:2376"
+    env:
+      DOCKER_TLS_VERIFY: "1"
 ```
 
-**Change from current:** An explicit `type` field is added to each runtime. This was implicit before (the runtime name *was* the type). With the `type` field, users can define `my-docker-staging: { type: docker, host: "..." }` without conflating name and type. The legacy names-as-types behavior is preserved for backward compatibility (if `type` is absent, the name is used).
+**Change from current:** An explicit `type` field is added to each runtime. This was implicit before (the runtime name *was* the type). With the `type` field, users can define multiple runtimes of the same type with different configurations. The legacy names-as-types behavior is preserved for backward compatibility (if `type` is absent, the name is used as the type).
 
 ### 2.5 `harness_configs` (named map)
 
@@ -148,6 +181,7 @@ harness_configs:
     args: []
     env: {}
     volumes: []
+    auth_selected_type: ""         # e.g., "gemini-api-key", "vertex-ai", "oauth-personal"
   claude:                          # default config for claude harness
     harness: claude
     image: "us-central1-docker.pkg.dev/.../scion-claude:latest"
@@ -156,7 +190,15 @@ harness_configs:
     args: []
     env: {}
     volumes: []
-  gemini-high-security:            # named variant
+  opencode:                        # default config for opencode harness
+    harness: opencode
+    image: "us-central1-docker.pkg.dev/.../scion-opencode:latest"
+    user: scion
+  codex:                           # default config for codex harness
+    harness: codex
+    image: "us-central1-docker.pkg.dev/.../scion-codex:latest"
+    user: scion
+  gemini-high-security:            # named variant (arbitrary name)
     harness: gemini
     image: "us-central1-docker.pkg.dev/.../scion-gemini:hardened"
     user: scion
@@ -167,6 +209,8 @@ harness_configs:
 ```
 
 **Change from current:** The `harnesses` map only allowed one entry per harness type (keyed by harness name). The new `harness_configs` map is keyed by an arbitrary config name, with an explicit `harness` field specifying the harness type. There is a convention that each harness has a "default" config whose name matches the harness (e.g., config named `gemini` with `harness: gemini`).
+
+**New fields:** `model` and `args` are new additions to harness configs. The current `HarnessConfig` struct does not have these — they exist only in the agent-level `ScionConfig`. Adding them to `harness_configs` allows setting model and arguments as defaults at the settings level.
 
 ### 2.6 `profiles` (named map)
 
@@ -200,7 +244,7 @@ Agent/template-level settings. These live in `scion-agent.yaml` within template 
 
 ```yaml
 # In .scion/templates/<name>/scion-agent.yaml
-harness: gemini
+harness_config: gemini             # references a key in harness_configs
 env: {}
 volumes: []
 resources:
@@ -223,6 +267,10 @@ services:                          # sidecar services
       timeout: "10s"
 ```
 
+**Change from original draft:** `harness` renamed to `harness_config` to clearly indicate that this field references a named harness configuration (a key in the `harness_configs` map), not a raw harness type. This avoids ambiguity when users define custom-named configs like `gemini-high-security`.
+
+**Note:** For backward compatibility, if `harness_config` is not present but `harness` is, the value is treated as both the harness type and the config name (matching the legacy behavior where harness name = harness type = config key).
+
 ### 2.8 Top-level metadata
 
 ```yaml
@@ -230,6 +278,7 @@ $schema: "https://scion.dev/schemas/settings/v1.json"
 schema_version: "1"
 
 active_profile: local
+default_template: gemini           # preserved for backward compatibility
 ```
 
 ---
@@ -306,18 +355,19 @@ Each schema property includes scope metadata:
       "x-scope": "any",
       "x-since": "1"
     },
+    "default_template": {
+      "type": "string",
+      "description": "Default template for new agents. Preserved for backward compatibility; prefer setting this per-profile.",
+      "x-env-var": "SCION_DEFAULT_TEMPLATE",
+      "x-scope": "any",
+      "x-since": "1"
+    },
     "server": {
       "type": "object",
       "description": "Server/broker process configuration. Global-only.",
       "x-scope": "global",
       "x-since": "1",
       "properties": {
-        "broker_id": {
-          "type": "string",
-          "description": "Unique broker identifier (UUID).",
-          "x-env-var": "SCION_SERVER_BROKER_ID",
-          "x-since": "1"
-        },
         "env": {
           "type": "string",
           "description": "Deployment environment label (e.g., dev, staging, prod).",
@@ -363,20 +413,20 @@ Each schema property includes scope metadata:
         "endpoint": {
           "type": "string",
           "format": "uri",
-          "description": "Hub API endpoint URL.",
+          "description": "Hub API endpoint URL to connect to as a client.",
           "x-env-var": "SCION_HUB_ENDPOINT",
           "x-since": "1"
         },
         "token": {
           "type": "string",
-          "description": "Bearer token for Hub authentication.",
+          "description": "Bearer token for Hub authentication (typically a dev token; see Open Question 1).",
           "x-env-var": "SCION_HUB_TOKEN",
           "x-sensitive": true,
           "x-since": "1"
         },
         "api_key": {
           "type": "string",
-          "description": "API key for Hub authentication.",
+          "description": "API key for Hub authentication (alternative to token).",
           "x-env-var": "SCION_HUB_API_KEY",
           "x-sensitive": true,
           "x-since": "1"
@@ -387,29 +437,16 @@ Each schema property includes scope metadata:
           "x-env-var": "SCION_HUB_GROVE_ID",
           "x-since": "1"
         },
-        "broker_id": {
-          "type": "string",
-          "description": "Broker identifier when registered with the Hub.",
-          "x-env-var": "SCION_HUB_BROKER_ID",
-          "x-since": "1"
-        },
-        "broker_nickname": {
-          "type": "string",
-          "description": "Human-readable broker name.",
-          "x-env-var": "SCION_HUB_BROKER_NICKNAME",
-          "x-since": "1"
-        },
-        "broker_token": {
-          "type": "string",
-          "description": "Token received when registering broker with Hub.",
-          "x-env-var": "SCION_HUB_BROKER_TOKEN",
-          "x-sensitive": true,
-          "x-since": "1"
-        },
         "local_only": {
           "type": "boolean",
-          "description": "Operate in local-only mode even when Hub is configured.",
+          "description": "Operate in local-only mode even when Hub is configured. Hub sync checks will error with guidance to use --no-hub.",
           "x-env-var": "SCION_HUB_LOCAL_ONLY",
+          "x-since": "1"
+        },
+        "last_synced_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 timestamp of the last successful Hub sync. Runtime-managed; not typically set by users.",
           "x-since": "1"
         }
       },
@@ -440,7 +477,7 @@ Each schema property includes scope metadata:
     },
     "runtimes": {
       "type": "object",
-      "description": "Named container runtime definitions.",
+      "description": "Named container runtime definitions. Map keys are arbitrary labels; the 'type' field determines the runtime type.",
       "x-scope": "any",
       "x-since": "1",
       "additionalProperties": {
@@ -507,12 +544,12 @@ Each schema property includes scope metadata:
         },
         "model": {
           "type": "string",
-          "description": "LLM model identifier."
+          "description": "LLM model identifier (new; not in current HarnessConfig)."
         },
         "args": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Additional harness CLI arguments."
+          "description": "Additional harness CLI arguments (new; not in current HarnessConfig)."
         },
         "env": {
           "type": "object",
@@ -524,7 +561,7 @@ Each schema property includes scope metadata:
         },
         "auth_selected_type": {
           "type": "string",
-          "description": "Authentication mechanism to use."
+          "description": "Authentication mechanism to use (e.g., gemini-api-key, vertex-ai, oauth-personal)."
         }
       },
       "additionalProperties": false
@@ -557,7 +594,7 @@ Each schema property includes scope metadata:
         "resources": { "$ref": "#/$defs/resourceSpec" },
         "harness_overrides": {
           "type": "object",
-          "description": "Per-harness-config overrides applied when using this profile.",
+          "description": "Per-harness-config overrides applied when using this profile. Keys are harness-config names (not harness types).",
           "additionalProperties": { "$ref": "#/$defs/harnessOverride" }
         }
       },
@@ -616,29 +653,63 @@ Each schema property includes scope metadata:
     },
     "serverHub": {
       "type": "object",
+      "description": "Hub API server settings (for running scion-server).",
       "properties": {
-        "port": { "type": "integer", "default": 9810 },
-        "host": { "type": "string", "default": "0.0.0.0" },
-        "endpoint": { "type": "string", "format": "uri" },
-        "read_timeout": { "type": "string", "default": "30s" },
-        "write_timeout": { "type": "string", "default": "60s" },
+        "port": { "type": "integer", "default": 9810, "x-env-var": "SCION_SERVER_HUB_PORT" },
+        "host": { "type": "string", "default": "0.0.0.0", "x-env-var": "SCION_SERVER_HUB_HOST" },
+        "public_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Public-facing URL for this Hub server. Passed to agents for status callbacks. Not the same as hub.endpoint (client-side).",
+          "x-env-var": "SCION_SERVER_HUB_ENDPOINT"
+        },
+        "read_timeout": { "type": "string", "default": "30s", "x-env-var": "SCION_SERVER_HUB_READTIMEOUT" },
+        "write_timeout": { "type": "string", "default": "60s", "x-env-var": "SCION_SERVER_HUB_WRITETIMEOUT" },
         "cors": { "$ref": "#/$defs/corsConfig" },
         "admin_emails": {
           "type": "array",
-          "items": { "type": "string", "format": "email" }
+          "items": { "type": "string", "format": "email" },
+          "description": "Email addresses to auto-promote to admin role.",
+          "x-env-var": "SCION_SERVER_HUB_ADMINEMAIL"
         }
       }
     },
     "serverRuntimeBroker": {
       "type": "object",
+      "description": "Runtime Broker API server and identity settings.",
       "properties": {
-        "enabled": { "type": "boolean", "default": false },
-        "port": { "type": "integer", "default": 9800 },
-        "host": { "type": "string", "default": "0.0.0.0" },
-        "hub_endpoint": { "type": "string", "format": "uri" },
-        "broker_name": { "type": "string" },
-        "read_timeout": { "type": "string", "default": "30s" },
-        "write_timeout": { "type": "string", "default": "120s" },
+        "enabled": { "type": "boolean", "default": false, "x-env-var": "SCION_SERVER_RUNTIMEBROKER_ENABLED" },
+        "port": { "type": "integer", "default": 9800, "x-env-var": "SCION_SERVER_RUNTIMEBROKER_PORT" },
+        "host": { "type": "string", "default": "0.0.0.0", "x-env-var": "SCION_SERVER_RUNTIMEBROKER_HOST" },
+        "read_timeout": { "type": "string", "default": "30s", "x-env-var": "SCION_SERVER_RUNTIMEBROKER_READTIMEOUT" },
+        "write_timeout": { "type": "string", "default": "120s", "x-env-var": "SCION_SERVER_RUNTIMEBROKER_WRITETIMEOUT" },
+        "hub_endpoint": {
+          "type": "string",
+          "format": "uri",
+          "description": "Hub API endpoint for this broker to report status to.",
+          "x-env-var": "SCION_SERVER_RUNTIMEBROKER_HUBENDPOINT"
+        },
+        "broker_id": {
+          "type": "string",
+          "description": "Unique broker identifier (UUID). Auto-generated if empty.",
+          "x-env-var": "SCION_SERVER_RUNTIMEBROKER_BROKERID"
+        },
+        "broker_name": {
+          "type": "string",
+          "description": "Human-readable broker name.",
+          "x-env-var": "SCION_SERVER_RUNTIMEBROKER_BROKERNAME"
+        },
+        "broker_nickname": {
+          "type": "string",
+          "description": "Human-readable display name for the broker. Defaults to hostname.",
+          "x-env-var": "SCION_SERVER_RUNTIMEBROKER_BROKERNICKNAME"
+        },
+        "broker_token": {
+          "type": "string",
+          "description": "Token received when registering this broker with the Hub.",
+          "x-sensitive": true,
+          "x-env-var": "SCION_SERVER_RUNTIMEBROKER_BROKERTOKEN"
+        },
         "cors": { "$ref": "#/$defs/corsConfig" }
       }
     },
@@ -665,24 +736,26 @@ Each schema property includes scope metadata:
     "serverDatabase": {
       "type": "object",
       "properties": {
-        "driver": { "type": "string", "enum": ["sqlite", "postgres"], "default": "sqlite" },
-        "url": { "type": "string" }
+        "driver": { "type": "string", "enum": ["sqlite", "postgres"], "default": "sqlite", "x-env-var": "SCION_SERVER_DATABASE_DRIVER" },
+        "url": { "type": "string", "x-env-var": "SCION_SERVER_DATABASE_URL" }
       }
     },
     "serverAuth": {
       "type": "object",
       "properties": {
-        "dev_mode": { "type": "boolean", "default": false },
-        "dev_token": { "type": "string", "x-sensitive": true },
-        "dev_token_file": { "type": "string" },
+        "dev_mode": { "type": "boolean", "default": false, "x-env-var": "SCION_SERVER_AUTH_DEVMODE" },
+        "dev_token": { "type": "string", "x-sensitive": true, "x-env-var": "SCION_SERVER_AUTH_DEVTOKEN" },
+        "dev_token_file": { "type": "string", "x-env-var": "SCION_SERVER_AUTH_DEVTOKENFILE" },
         "authorized_domains": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": { "type": "string" },
+          "x-env-var": "SCION_SERVER_AUTH_AUTHORIZEDDOMAINS"
         }
       }
     },
     "serverOAuth": {
       "type": "object",
+      "description": "OAuth provider configurations. Web, CLI, and Device use separate OAuth clients due to different redirect URI requirements.",
       "properties": {
         "web": { "$ref": "#/$defs/oauthClientConfig" },
         "cli": { "$ref": "#/$defs/oauthClientConfig" },
@@ -706,17 +779,17 @@ Each schema property includes scope metadata:
     "serverStorage": {
       "type": "object",
       "properties": {
-        "provider": { "type": "string", "enum": ["local", "gcs"], "default": "local" },
-        "bucket": { "type": "string" },
-        "local_path": { "type": "string" }
+        "provider": { "type": "string", "enum": ["local", "gcs"], "default": "local", "x-env-var": "SCION_SERVER_STORAGE_PROVIDER" },
+        "bucket": { "type": "string", "x-env-var": "SCION_SERVER_STORAGE_BUCKET" },
+        "local_path": { "type": "string", "x-env-var": "SCION_SERVER_STORAGE_LOCALPATH" }
       }
     },
     "serverSecrets": {
       "type": "object",
       "properties": {
-        "backend": { "type": "string", "enum": ["local", "gcpsm"], "default": "local" },
-        "gcp_project_id": { "type": "string" },
-        "gcp_credentials": { "type": "string" }
+        "backend": { "type": "string", "enum": ["local", "gcpsm"], "default": "local", "x-env-var": "SCION_SERVER_SECRETS_BACKEND" },
+        "gcp_project_id": { "type": "string", "x-env-var": "SCION_SERVER_SECRETS_GCPPROJECTID" },
+        "gcp_credentials": { "type": "string", "x-env-var": "SCION_SERVER_SECRETS_GCPCREDENTIALS" }
       }
     }
   }
@@ -733,7 +806,15 @@ A separate agent schema (`agent-v1.schema.json`) will be defined for `scion-agen
   "type": "object",
   "properties": {
     "schema_version": { "type": "string", "const": "1" },
-    "harness": { "type": "string" },
+    "harness_config": {
+      "type": "string",
+      "description": "Name of the harness config entry to use (key in harness_configs map). Falls back to 'harness' field for legacy compat."
+    },
+    "harness": {
+      "type": "string",
+      "description": "Legacy: harness type name. Deprecated in favor of harness_config.",
+      "x-deprecated-by": "1"
+    },
     "env": { "type": "object", "additionalProperties": { "type": "string" } },
     "volumes": { "type": "array", "items": { "$ref": "#/$defs/volumeMount" } },
     "resources": { "$ref": "#/$defs/resourceSpec" },
@@ -753,11 +834,37 @@ A separate agent schema (`agent-v1.schema.json`) will be defined for `scion-agen
       "type": "array",
       "items": { "$ref": "#/$defs/serviceSpec" }
     },
-    "image": { "type": "string" },
-    "user": { "type": "string" },
-    "model": { "type": "string" },
+    "image": { "type": "string", "description": "Override container image." },
+    "user": { "type": "string", "description": "Override unix user." },
+    "model": { "type": "string", "description": "LLM model identifier." },
     "args": { "type": "array", "items": { "type": "string" } },
-    "detached": { "type": "boolean" }
+    "detached": { "type": "boolean", "description": "Run agent in detached (background) mode. Defaults to true." },
+    "config_dir": { "type": "string", "description": "Agent config directory." },
+    "command_args": { "type": "array", "items": { "type": "string" }, "description": "Additional command arguments." },
+    "gemini": {
+      "type": "object",
+      "description": "Gemini-specific configuration.",
+      "properties": {
+        "auth_selected_type": { "type": "string" }
+      }
+    },
+    "kubernetes": {
+      "type": "object",
+      "description": "Kubernetes-specific configuration.",
+      "properties": {
+        "context": { "type": "string" },
+        "namespace": { "type": "string" },
+        "runtime_class_name": { "type": "string" },
+        "service_account_name": { "type": "string" },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": { "type": "object", "additionalProperties": { "type": "string" } },
+            "limits": { "type": "object", "additionalProperties": { "type": "string" } }
+          }
+        }
+      }
+    }
   }
 }
 ```
@@ -770,38 +877,146 @@ A separate agent schema (`agent-v1.schema.json`) will be defined for `scion-agen
 
 All environment variables use the `SCION_` prefix. Nesting is represented by underscores. The schema's `x-env-var` annotation is the canonical source of truth.
 
+**Important:** The new versioned settings will use snake_case consistently for all koanf struct tags. This fixes the current inconsistency where some tags use camelCase (`groveId`, `apiKey`, `brokerNickname`) while env var mappings produce snake_case keys, causing silent mismatches.
+
 ### 4.2 Settings Env Vars
+
+These override values in `settings.yaml`. Prefix: `SCION_`.
 
 | Settings Path | Env Var | Type |
 |---|---|---|
 | `active_profile` | `SCION_ACTIVE_PROFILE` | string |
+| `default_template` | `SCION_DEFAULT_TEMPLATE` | string |
+| `grove_id` | `SCION_GROVE_ID` | string |
 | `hub.enabled` | `SCION_HUB_ENABLED` | bool |
 | `hub.endpoint` | `SCION_HUB_ENDPOINT` | string |
 | `hub.token` | `SCION_HUB_TOKEN` | string |
 | `hub.api_key` | `SCION_HUB_API_KEY` | string |
 | `hub.grove_id` | `SCION_HUB_GROVE_ID` | string |
-| `hub.broker_id` | `SCION_HUB_BROKER_ID` | string |
-| `hub.broker_nickname` | `SCION_HUB_BROKER_NICKNAME` | string |
-| `hub.broker_token` | `SCION_HUB_BROKER_TOKEN` | string |
 | `hub.local_only` | `SCION_HUB_LOCAL_ONLY` | bool |
+| `bucket.provider` | `SCION_BUCKET_PROVIDER` | string |
+| `bucket.name` | `SCION_BUCKET_NAME` | string |
+| `bucket.prefix` | `SCION_BUCKET_PREFIX` | string |
 | `cli.autohelp` | `SCION_CLI_AUTOHELP` | bool |
 | `cli.interactive_disabled` | `SCION_CLI_INTERACTIVE_DISABLED` | bool |
 
+**Note:** `cli.*` and `hub.grove_id` env var mappings are new — they don't work in the current (legacy) Koanf loader due to missing key transformations. The versioned loader must implement these.
+
 ### 4.3 Server Env Vars
 
-Server settings use the `SCION_SERVER_` prefix (unchanged from current behavior).
+These override values in `server.yaml` / `settings.yaml` `server` section. Prefix: `SCION_SERVER_`.
 
-| Settings Path | Env Var |
+| Settings Path | Env Var | Type |
+|---|---|---|
+| **Hub Server** | | |
+| `server.hub.port` | `SCION_SERVER_HUB_PORT` | int |
+| `server.hub.host` | `SCION_SERVER_HUB_HOST` | string |
+| `server.hub.public_url` | `SCION_SERVER_HUB_ENDPOINT` | string |
+| `server.hub.read_timeout` | `SCION_SERVER_HUB_READTIMEOUT` | duration |
+| `server.hub.write_timeout` | `SCION_SERVER_HUB_WRITETIMEOUT` | duration |
+| `server.hub.cors_enabled` | `SCION_SERVER_HUB_CORSENABLED` | bool |
+| `server.hub.admin_emails` | `SCION_SERVER_HUB_ADMINEMAIL` | string (CSV) |
+| **Runtime Broker** | | |
+| `server.runtime_broker.enabled` | `SCION_SERVER_RUNTIMEBROKER_ENABLED` | bool |
+| `server.runtime_broker.port` | `SCION_SERVER_RUNTIMEBROKER_PORT` | int |
+| `server.runtime_broker.host` | `SCION_SERVER_RUNTIMEBROKER_HOST` | string |
+| `server.runtime_broker.read_timeout` | `SCION_SERVER_RUNTIMEBROKER_READTIMEOUT` | duration |
+| `server.runtime_broker.write_timeout` | `SCION_SERVER_RUNTIMEBROKER_WRITETIMEOUT` | duration |
+| `server.runtime_broker.hub_endpoint` | `SCION_SERVER_RUNTIMEBROKER_HUBENDPOINT` | string |
+| `server.runtime_broker.broker_id` | `SCION_SERVER_RUNTIMEBROKER_BROKERID` | string |
+| `server.runtime_broker.broker_name` | `SCION_SERVER_RUNTIMEBROKER_BROKERNAME` | string |
+| `server.runtime_broker.broker_nickname` | `SCION_SERVER_RUNTIMEBROKER_BROKERNICKNAME` | string |
+| `server.runtime_broker.broker_token` | `SCION_SERVER_RUNTIMEBROKER_BROKERTOKEN` | string |
+| **Database** | | |
+| `server.database.driver` | `SCION_SERVER_DATABASE_DRIVER` | string |
+| `server.database.url` | `SCION_SERVER_DATABASE_URL` | string |
+| **Auth** | | |
+| `server.auth.dev_mode` | `SCION_SERVER_AUTH_DEVMODE` | bool |
+| `server.auth.dev_token` | `SCION_SERVER_AUTH_DEVTOKEN` | string |
+| `server.auth.dev_token_file` | `SCION_SERVER_AUTH_DEVTOKENFILE` | string |
+| `server.auth.authorized_domains` | `SCION_SERVER_AUTH_AUTHORIZEDDOMAINS` | string (CSV) |
+| **OAuth — Web** | | |
+| `server.oauth.web.google.client_id` | `SCION_SERVER_OAUTH_WEB_GOOGLE_CLIENTID` | string |
+| `server.oauth.web.google.client_secret` | `SCION_SERVER_OAUTH_WEB_GOOGLE_CLIENTSECRET` | string |
+| `server.oauth.web.github.client_id` | `SCION_SERVER_OAUTH_WEB_GITHUB_CLIENTID` | string |
+| `server.oauth.web.github.client_secret` | `SCION_SERVER_OAUTH_WEB_GITHUB_CLIENTSECRET` | string |
+| **OAuth — CLI** | | |
+| `server.oauth.cli.google.client_id` | `SCION_SERVER_OAUTH_CLI_GOOGLE_CLIENTID` | string |
+| `server.oauth.cli.google.client_secret` | `SCION_SERVER_OAUTH_CLI_GOOGLE_CLIENTSECRET` | string |
+| `server.oauth.cli.github.client_id` | `SCION_SERVER_OAUTH_CLI_GITHUB_CLIENTID` | string |
+| `server.oauth.cli.github.client_secret` | `SCION_SERVER_OAUTH_CLI_GITHUB_CLIENTSECRET` | string |
+| **OAuth — Device** | | |
+| `server.oauth.device.google.client_id` | `SCION_SERVER_OAUTH_DEVICE_GOOGLE_CLIENTID` | string |
+| `server.oauth.device.google.client_secret` | `SCION_SERVER_OAUTH_DEVICE_GOOGLE_CLIENTSECRET` | string |
+| `server.oauth.device.github.client_id` | `SCION_SERVER_OAUTH_DEVICE_GITHUB_CLIENTID` | string |
+| `server.oauth.device.github.client_secret` | `SCION_SERVER_OAUTH_DEVICE_GITHUB_CLIENTSECRET` | string |
+| **Storage** | | |
+| `server.storage.provider` | `SCION_SERVER_STORAGE_PROVIDER` | string |
+| `server.storage.bucket` | `SCION_SERVER_STORAGE_BUCKET` | string |
+| `server.storage.local_path` | `SCION_SERVER_STORAGE_LOCALPATH` | string |
+| **Secrets** | | |
+| `server.secrets.backend` | `SCION_SERVER_SECRETS_BACKEND` | string |
+| `server.secrets.gcp_project_id` | `SCION_SERVER_SECRETS_GCPPROJECTID` | string |
+| `server.secrets.gcp_credentials` | `SCION_SERVER_SECRETS_GCPCREDENTIALS` | string |
+| **Logging** | | |
+| `server.log_level` | `SCION_SERVER_LOG_LEVEL` | string |
+| `server.log_format` | `SCION_SERVER_LOG_FORMAT` | string |
+
+**Note on CORS env vars:** The current `envKeyToConfigKey()` function in `hub_config.go` does not have camelCase mappings for CORS-related fields (`corsEnabled`, `corsAllowedOrigins`, etc.). This means CORS settings cannot currently be overridden via environment variables. The versioned settings implementation should add these mappings or switch to snake_case koanf tags.
+
+### 4.4 Agent Container Env Vars (runtime-injected)
+
+These are environment variables injected into agent containers by the runtime/broker at startup. They are **not** settings — they are set programmatically and are documented here for completeness.
+
+| Env Var | Set By | Description |
+|---|---|---|
+| `SCION_AGENT_NAME` | `agent/run.go`, `harness/generic.go` | Agent display name |
+| `SCION_AGENT_ID` | `runtimebroker/handlers.go` | Hub UUID for the agent (hosted mode) |
+| `SCION_TEMPLATE_NAME` | `agent/run.go` | Template used to create the agent |
+| `SCION_BROKER_NAME` | `agent/run.go`, `runtimebroker/handlers.go` | Broker name (defaults to "local") |
+| `SCION_CREATOR` | `agent/run.go`, `runtimebroker/handlers.go` | User who created the agent (OS user or Hub email) |
+| `SCION_HOST_UID` | `runtime/common.go` | Host user ID (for file ownership mapping) |
+| `SCION_HOST_GID` | `runtime/common.go` | Host group ID (for file ownership mapping) |
+| `SCION_HUB_URL` | `runtimebroker/handlers.go` | Hub callback URL for agent status reporting (hosted mode) |
+| `SCION_HUB_TOKEN` | `runtimebroker/handlers.go` | Hub auth token for agent callbacks (hosted mode) |
+| `SCION_HOOKS_DIR` | (user-set or default) | Override path for agent lifecycle hooks directory |
+| `SCION_GRACE_PERIOD` | (user-set) | Override container shutdown grace period |
+| `SCION_MODEL` | Harness-specific | Model identifier used by the harness |
+| `SCION_HARNESS` | Harness-specific | Harness type identifier |
+
+### 4.5 Utility / Debug Env Vars
+
+These are standalone environment variables used by the CLI and server binaries for debugging and operational purposes. They are not part of the settings schema.
+
+| Env Var | Description |
 |---|---|
-| `server.hub.port` | `SCION_SERVER_HUB_PORT` |
-| `server.hub.host` | `SCION_SERVER_HUB_HOST` |
-| `server.hub.endpoint` | `SCION_SERVER_HUB_ENDPOINT` |
-| `server.database.driver` | `SCION_SERVER_DATABASE_DRIVER` |
-| `server.database.url` | `SCION_SERVER_DATABASE_URL` |
-| `server.auth.dev_mode` | `SCION_SERVER_AUTH_DEV_MODE` |
-| `server.log_level` | `SCION_SERVER_LOG_LEVEL` |
-| `server.log_format` | `SCION_SERVER_LOG_FORMAT` |
-| ... | ... (follows `SCION_SERVER_` + path convention) |
+| `SCION_DEBUG` | Enable debug logging when set to "1" |
+| `SCION_LOG_LEVEL` | Override log level at runtime ("debug", "info", etc.) |
+| `SCION_LOG_GCP` | Enable GCP Cloud Logging when set to "true" |
+| `SCION_CLOUD_LOGGING` | Enable Cloud Logging integration |
+| `SCION_CLOUD_LOGGING_LOG_ID` | Log ID for Cloud Logging |
+| `SCION_GCP_PROJECT_ID` | GCP project ID (for Cloud Logging; priority over `GOOGLE_CLOUD_PROJECT`) |
+| `SCION_HEADLESS` | Force headless mode when set to "1" (skips browser-open operations) |
+| `SCION_GIT_BINARY` | Override path to the git binary |
+| `SCION_DEV_TOKEN` | Dev auth token for Hub/Broker API client authentication |
+| `SCION_DEV_TOKEN_FILE` | Path to file containing dev auth token (fallback: `~/.scion/dev-token`) |
+| `SCION_HUB_STORAGE_BUCKET` | Override Hub storage bucket (used in `cmd/server.go`) |
+
+### 4.6 LLM Provider Env Vars (pass-through)
+
+These are discovered by harness implementations and passed into agent containers. They are not part of the settings schema but affect agent behavior.
+
+| Env Var | Harness | Description |
+|---|---|---|
+| `GEMINI_API_KEY` | gemini | Gemini API key |
+| `GOOGLE_API_KEY` | gemini | Alternative Google API key |
+| `GOOGLE_APPLICATION_CREDENTIALS` | gemini | Path to GCP service account JSON |
+| `GOOGLE_CLOUD_PROJECT` / `GCP_PROJECT` | gemini | GCP project ID |
+| `GOOGLE_CLOUD_LOCATION` | gemini | GCP location for Vertex AI |
+| `VERTEX_API_KEY` | gemini | Vertex AI API key |
+| `ANTHROPIC_API_KEY` | claude, opencode, generic | Anthropic API key |
+| `OPENAI_API_KEY` | opencode, codex, generic | OpenAI API key |
+| `CODEX_API_KEY` | codex | Codex-specific API key |
 
 ---
 
@@ -827,9 +1042,12 @@ func AdaptLegacySettings(legacy *LegacySettings) (*VersionedSettings, []string) 
     // Returns adapted settings + list of deprecation warnings
     // Mapping:
     //   legacy.Harnesses → versioned.HarnessConfigs (name = harness type, harness = name)
-    //   legacy.Bucket → moved under server.storage or dropped with warning
+    //   legacy.Bucket → see Open Question 2 (not 1:1 with server.storage)
     //   legacy.GroveID → preserved as-is
     //   legacy.DefaultTemplate → preserved as-is
+    //   legacy.Hub.BrokerID → moved to server.runtime_broker.broker_id (with warning)
+    //   legacy.Hub.BrokerNickname → moved to server.runtime_broker.broker_nickname
+    //   legacy.Hub.BrokerToken → moved to server.runtime_broker.broker_token
     //   All other fields map 1:1
 }
 ```
@@ -840,7 +1058,9 @@ func AdaptLegacySettings(legacy *LegacySettings) (*VersionedSettings, []string) 
 WARNING: Legacy settings format detected in /path/to/settings.yaml
   The following fields are deprecated and will be removed in a future version:
     - "harnesses" → use "harness_configs" with explicit "harness" field
-    - "bucket" → use "server.storage" (global) or remove (grove)
+    - "bucket" → see migration guidance (run 'scion config migrate')
+    - "hub.broker_id", "hub.broker_nickname", "hub.broker_token"
+        → moved to "server.runtime_broker" (global settings only)
   Run 'scion config migrate' to automatically update your settings.
 ```
 
@@ -868,8 +1088,8 @@ WARNING: Legacy settings format detected in /path/to/settings.yaml
 **Goal:** Implement the new Go structs and a parallel loading path that can load versioned settings files.
 
 **Deliverables:**
-1. Define `VersionedSettings` struct in `pkg/config/settings_v1.go` with all new groups (`Server`, `Hub`, `CLI`, `Runtimes`, `HarnessConfigs`, `Profiles`).
-2. Define `HarnessConfigEntry` struct (the `harness_configs` value type with its explicit `harness` field).
+1. Define `VersionedSettings` struct in `pkg/config/settings_v1.go` with all new groups (`Server`, `Hub`, `CLI`, `Runtimes`, `HarnessConfigs`, `Profiles`). **Use snake_case koanf tags consistently.**
+2. Define `HarnessConfigEntry` struct (the `harness_configs` value type with its explicit `harness` field, plus new `model` and `args` fields).
 3. Implement `LoadVersionedSettings(grovePath string) (*VersionedSettings, error)` using Koanf, loading with the same hierarchy (defaults → global → grove → env vars).
 4. Implement `AdaptLegacySettings(legacy *Settings) (*VersionedSettings, []string)` that converts the current `Settings` struct to `VersionedSettings`, returning deprecation warnings.
 5. Create a unified `LoadEffectiveSettings(grovePath string) (*VersionedSettings, []string, error)` that:
@@ -907,6 +1127,7 @@ WARNING: Legacy settings format detected in /path/to/settings.yaml
 5. Add `scion config migrate --server` to merge `server.yaml` into `settings.yaml`.
 6. Update `scion server` and `scion broker` commands to read from the unified config.
 7. Document that `server.yaml` is deprecated in favor of `settings.yaml` `server` section.
+8. Fix CORS env var mappings — add camelCase entries to `envKeyToConfigKey()` or switch to snake_case tags.
 
 ### Phase 5: New Feature Gates
 
@@ -985,6 +1206,10 @@ Semantic versioning (major.minor.patch) is overkill for a settings schema. A sim
 
 JSON Schema is language-neutral and can be used by IDEs (via `$schema` in YAML) for autocompletion and validation. It serves as documentation, validation specification, and tooling integration in one artifact. Go code validates against it at runtime using an embedded validator library.
 
+### 8.6 Why move broker identity from `hub` to `server.runtime_broker`?
+
+Broker identity (`broker_id`, `broker_nickname`, `broker_token`) describes **this machine's** role as a compute broker. It is inherently per-machine, not per-grove. Placing it under `server.runtime_broker` (which is global-only) correctly scopes it. The previous placement under `hub` (which allows grove-level overrides) was a historical artifact of the broker registering through the hub client.
+
 ---
 
 ## 9. Risks and Mitigations
@@ -996,6 +1221,8 @@ JSON Schema is language-neutral and can be used by IDEs (via `$schema` in YAML) 
 | `server.yaml` users don't notice the deprecation | Two config files drift out of sync | Emit a deprecation warning on every server start when `server.yaml` exists |
 | Named harness configs break profile override resolution | Wrong harness config selected | Profile `harness_overrides` keys match harness-config names, not harness types. Document this clearly |
 | Koanf deep merge behavior changes between legacy and versioned structs | Subtle config differences | Test merge behavior exhaustively with multi-layer configs |
+| Moving broker identity from `hub` to `server.runtime_broker` breaks save logic | Broker registration writes to wrong location | Migration adapter must detect and relocate these fields; `SaveSettings` must handle the new location |
+| CORS env vars don't work in current code | Server CORS can't be configured via env | Add missing camelCase mappings or switch to snake_case (Phase 4 deliverable) |
 
 ---
 
@@ -1007,6 +1234,7 @@ JSON Schema is language-neutral and can be used by IDEs (via `$schema` in YAML) 
 - Legacy adapter: every field in `Settings` maps correctly to `VersionedSettings`.
 - Resolution: `ResolveHarnessConfig` with default names, named variants, profile overrides.
 - Env var mapping: every `x-env-var` in the schema is honored by the Koanf loader.
+- Broker identity migration: fields move from `hub` to `server.runtime_broker` correctly.
 
 ### Integration Tests
 - Round-trip: write a `VersionedSettings` to YAML, reload it, compare.
@@ -1017,3 +1245,93 @@ JSON Schema is language-neutral and can be used by IDEs (via `$schema` in YAML) 
 ### Compatibility Tests
 - The default embedded settings (upgraded to versioned format) produce the same resolved configs as the current embedded defaults.
 - Existing grove-level settings (legacy format) work without modification and emit a deprecation warning.
+
+---
+
+## 11. Open Questions
+
+### OQ-1: Should `hub.token` be renamed to `hub.dev_token`?
+
+**Context:** The current `hub.token` / `SCION_HUB_TOKEN` stores a bearer token for Hub authentication. In practice, this is typically a dev token issued by the server's dev auth system. The original feedback suggested renaming it to `dev_token` to make this explicit.
+
+**Arguments for renaming:**
+- Clarifies that this is for development/manual auth, not production OAuth flows.
+- Avoids confusion with `server.auth.dev_token` (the server-side dev token).
+- Makes it clear that production deployments should use OAuth, not static tokens.
+
+**Arguments against:**
+- The field could hold *any* bearer token (including service account tokens or personal access tokens if those are added later). `dev_token` is too restrictive.
+- Breaking change: `SCION_HUB_TOKEN` is widely used and documented.
+- Creates a second `dev_token` field alongside `server.auth.dev_token`, which may be more confusing.
+
+**Recommendation:** Keep as `token` with documentation clarifying its typical use as a dev auth token. Revisit when a formal access token mechanism is added.
+
+### OQ-2: What is the migration path for `Settings.Bucket`?
+
+**Context:** The current `Settings` struct has a top-level `Bucket` field (`BucketConfig` with `Provider`, `Name`, `Prefix`) that configures cloud storage for agent workspace persistence. The design doc originally proposed moving this to `server.storage`. However, `server.storage` (`StorageConfig` with `Provider`, `Bucket`, `LocalPath`) serves a different purpose — it's the server's template/asset storage backend.
+
+**Differences:**
+- `Settings.Bucket`: Client/grove-level. Used for persisting agent workspace data to GCS.
+- `GlobalConfig.Storage`: Server-level. Used for storing templates and assets.
+
+**Options:**
+1. Keep `bucket` as a separate top-level setting in versioned settings.
+2. Move it into a new `storage` section at the grove level (distinct from `server.storage`).
+3. Fold it into the `volumes` system with GCS volume mounts.
+4. Drop it entirely if the feature is underused.
+
+**Status:** Needs investigation into actual usage patterns before deciding.
+
+### OQ-3: How should `hub.last_synced_at` be handled as runtime state?
+
+**Context:** `last_synced_at` is not a user-configured setting — it's runtime state written back to the settings file by the sync logic. Mixing runtime state with configuration in the same file is an anti-pattern that complicates validation and editing.
+
+**Options:**
+1. Keep it in `settings.yaml` (status quo, simple, but impure).
+2. Move it to a separate state file (e.g., `~/.scion/state.yaml` or `.scion/state.yaml`).
+3. Store it in a lightweight local database or key-value store.
+
+**Recommendation:** Keep in settings for now (pragmatic), but add `"x-runtime-managed": true` annotation in the schema to indicate this field shouldn't be manually edited. Consider extracting runtime state to a separate file if more runtime-managed fields are added in the future.
+
+### OQ-4: Env var naming for the `server.hub.public_url` rename
+
+**Context:** The current env var `SCION_SERVER_HUB_ENDPOINT` maps to the `hub.endpoint` field in `GlobalConfig.Hub`. The design doc renames this to `server.hub.public_url`. Should the env var also be renamed?
+
+**Options:**
+1. Keep `SCION_SERVER_HUB_ENDPOINT` for backward compatibility (document that it maps to `public_url`).
+2. Rename to `SCION_SERVER_HUB_PUBLIC_URL` and add a deprecation shim for the old name.
+3. Support both during the transition period.
+
+**Recommendation:** Keep `SCION_SERVER_HUB_ENDPOINT` (option 1). The env var doesn't need to match the YAML field name exactly, and changing env vars is more disruptive than changing YAML keys.
+
+### OQ-5: Should `server.runtime_broker` be shortened to `server.broker`?
+
+**Context:** The current struct is `RuntimeBrokerConfig` and the YAML key is `runtimeBroker` / `runtime_broker`. This is verbose. The feedback originally suggested "broker" as the section name.
+
+**Arguments for `server.broker`:** Shorter, cleaner, matches common usage (users say "broker" not "runtime broker").
+
+**Arguments for `server.runtime_broker`:** Maintains consistency with the current naming. Distinguishes from other possible broker types if the concept evolves.
+
+**Status:** Low priority. Can be decided during Phase 4 implementation.
+
+### OQ-6: CORS env var mapping is broken in current code
+
+**Context:** The `envKeyToConfigKey()` function in `hub_config.go` maps env var suffixes to koanf keys. It has camelCase mappings for fields like `clientId`, `brokerId`, `devMode`, etc. However, CORS-related fields (`corsEnabled`, `corsAllowedOrigins`, `corsAllowedMethods`, `corsAllowedHeaders`, `corsMaxAge`) are NOT in the mapping table.
+
+This means env vars like `SCION_SERVER_HUB_CORSENABLED` would produce the koanf key `hub.corsenabled` instead of `hub.corsEnabled`, silently failing to override the setting.
+
+**Resolution:** This is a pre-existing bug that should be fixed regardless of the versioned settings refactor. Either:
+1. Add the missing camelCase entries to `envKeyToConfigKey()`.
+2. Switch the `GlobalConfig` struct's koanf tags to snake_case (aligned with the versioned settings approach).
+
+Option 2 is preferred and should be done as part of Phase 4.
+
+### OQ-7: Inconsistency between `SCION_HUB_URL` and `SCION_HUB_ENDPOINT`
+
+**Context:** Two different env vars exist for what appears to be the same concept:
+- `SCION_HUB_ENDPOINT`: Used in `settings.yaml` loading (`koanf.go`) to override `hub.endpoint`.
+- `SCION_HUB_URL`: Used in `runtimebroker/handlers.go` and `sciontool` to tell agents where the Hub is.
+
+`SCION_HUB_URL` is injected into agent containers at runtime (Section 4.4) and is read by `sciontool` inside the container. `SCION_HUB_ENDPOINT` is a settings override on the host.
+
+**Resolution:** These serve different purposes (host-side setting override vs container-injected runtime config) but the naming is confusing. Document clearly and consider aligning in a future version. The versioned settings should keep `SCION_HUB_ENDPOINT` for the client setting and `SCION_HUB_URL` for the container injection.
