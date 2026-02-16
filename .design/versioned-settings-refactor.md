@@ -647,23 +647,30 @@ WARNING: Legacy settings format detected in /path/to/settings.yaml
 - Also implements `ValidateAgentConfig()` for agent schema validation and `GetSettingsSchemaJSON()`/`GetAgentSchemaJSON()` for schema retrieval.
 - 33 tests in `pkg/config/schema_test.go` covering detection, validation, and edge cases.
 
-### Phase 2: New Settings Structs & Loader
+### Phase 2: New Settings Structs & Loader ✅ COMPLETE
 
 **Goal:** Implement the new Go structs and a parallel loading path that can load versioned settings files.
 
 **Deliverables:**
-1. Define `VersionedSettings` struct in `pkg/config/settings_v1.go` with all new groups (`Server`, `Hub`, `CLI`, `Runtimes`, `HarnessConfigs`, `Profiles`). **Use snake_case koanf tags consistently.**
-2. Define `HarnessConfigEntry` struct (the `harness_configs` value type with its explicit `harness` field, plus new `model` and `args` fields).
-3. Implement `LoadVersionedSettings(grovePath string) (*VersionedSettings, error)` using Koanf, loading with the same hierarchy (defaults → global → grove → env vars).
-4. Implement `AdaptLegacySettings(legacy *Settings) (*VersionedSettings, []string)` that converts the current `Settings` struct to `VersionedSettings`, returning deprecation warnings.
-5. Create a unified `LoadEffectiveSettings(grovePath string) (*VersionedSettings, []string, error)` that:
+1. ✅ Define `VersionedSettings` struct in `pkg/config/settings_v1.go` with all new groups (`Server`, `Hub`, `CLI`, `Runtimes`, `HarnessConfigs`, `Profiles`). **Use snake_case koanf tags consistently.**
+2. ✅ Define `HarnessConfigEntry` struct (the `harness_configs` value type with its explicit `harness` field, plus new `model` and `args` fields).
+3. ✅ Implement `LoadVersionedSettings(grovePath string) (*VersionedSettings, error)` using Koanf, loading with the same hierarchy (defaults → global → grove → env vars).
+4. ✅ Implement `AdaptLegacySettings(legacy *Settings) (*VersionedSettings, []string)` that converts the current `Settings` struct to `VersionedSettings`, returning deprecation warnings.
+5. ✅ Create a unified `LoadEffectiveSettings(grovePath string) (*VersionedSettings, []string, error)` that:
    - Detects format.
    - If versioned: validates and loads via the new path.
    - If legacy: loads via old path, adapts, emits warnings.
-6. Update `pkg/config/embeds/default_settings.yaml` to use the versioned format (with `schema_version: "1"`).
-7. Write comprehensive tests for both loading paths and the adapter.
+6. ✅ Update `pkg/config/embeds/default_settings.yaml` to use the versioned format (with `schema_version: "1"`).
+7. ✅ Write comprehensive tests for both loading paths and the adapter.
 
 **No consumer changes yet.** All existing code still uses the legacy `Settings` struct. The new loader exists but is not wired in.
+
+**Implementation notes:**
+- `V1ServerConfig` is a minimal stub (Env, LogLevel, LogFormat only); full decomposition deferred to Phase 4.
+- `convertVersionedToLegacy` helper enables `GetDefaultSettingsData()` to produce backward-compatible JSON from versioned defaults.
+- `resolveEffectiveGrovePath` extracted as shared helper for both `LoadSettingsKoanf` and `LoadVersionedSettings`.
+- `versionedEnvKeyMapper` uses simpler snake_case-native mapping (no camelCase conversion), fixing `SCION_HUB_GROVE_ID`, `SCION_HUB_LOCAL_ONLY`, `SCION_CLI_AUTOHELP`, `SCION_CLI_INTERACTIVE_DISABLED`.
+- 24 new tests in `settings_v1_test.go`; all existing tests pass unchanged.
 
 ### Phase 3: Consumer Migration — Core Resolution
 
