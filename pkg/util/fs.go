@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -131,7 +132,20 @@ func removeAllSafe(root string) error {
 	var symlinkCount int
 	var firstErr error
 
+	var lastDir string
+	var dirStart time.Time
+
 	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		// Track time spent per directory to identify slow ReadDir calls.
+		currentDir := filepath.Dir(path)
+		if currentDir != lastDir {
+			if lastDir != "" && time.Since(dirStart) > 100*time.Millisecond {
+				Debugf("removeAllSafe: slow dir listing+processing: %v for %s", time.Since(dirStart), filepath.Base(lastDir))
+			}
+			lastDir = currentDir
+			dirStart = time.Now()
+		}
+
 		if err != nil {
 			if os.IsPermission(err) {
 				// Make the parent directory writable and retry.
@@ -224,39 +238,59 @@ func removeAllSafe(root string) error {
 // multi-second timeout while macOS tries to resolve the nonexistent
 // container-internal path.
 //
-// This function works around the issue by atomically replacing the symlink
-// directory entry with an empty regular file via rename(2), then removing
-// the regular file. Since rename() operates purely on directory entries
-// without resolving symlink targets, it avoids triggering autofs.
+// This function uses syscall.Unlinkat with a parent directory fd to avoid
+// full path resolution. It also tries an atomic rename-over as a second
+// strategy. Debug timing is included to diagnose which approach works.
 func removeSymlinkSafe(path string) {
+	start := time.Now()
 	dir := filepath.Dir(path)
-	f, err := os.CreateTemp(dir, ".symrm.*")
-	if err != nil {
-		// Fallback: try direct removal if we can't create a temp file.
-		if rmErr := os.Remove(path); rmErr != nil && os.IsPermission(rmErr) {
-			os.Chmod(dir, 0700)
-			os.Remove(path)
-		}
-		return
-	}
-	tmp := f.Name()
-	f.Close()
+	name := filepath.Base(path)
 
-	// Atomically replace the symlink with the empty regular file.
-	// This eliminates the symlink directory entry without the kernel
-	// needing to inspect or resolve the symlink target.
-	if err := os.Rename(tmp, path); err != nil {
+	// Strategy 1: unlinkat with parent directory fd.
+	// This avoids full path resolution — the kernel operates directly on
+	// the directory entry via the fd, without resolving the symlink target.
+	dirFD, err := syscall.Open(dir, syscall.O_RDONLY, 0)
+	if err == nil {
+		err = syscall.Unlinkat(dirFD, name)
+		syscall.Close(dirFD)
+		if err == nil {
+			elapsed := time.Since(start)
+			if elapsed > 100*time.Millisecond {
+				Debugf("removeSymlinkSafe: unlinkat took %v for %s", elapsed, name)
+			}
+			return
+		}
+		Debugf("removeSymlinkSafe: unlinkat failed for %s: %v", name, err)
+	}
+
+	// Strategy 2: rename a temp file over the symlink, then remove the
+	// regular file. rename(2) operates on directory entries without
+	// resolving symlink targets.
+	f, tmpErr := os.CreateTemp(dir, ".symrm.*")
+	if tmpErr == nil {
+		tmp := f.Name()
+		f.Close()
+		if os.Rename(tmp, path) == nil {
+			os.Remove(path)
+			elapsed := time.Since(start)
+			if elapsed > 100*time.Millisecond {
+				Debugf("removeSymlinkSafe: rename-over took %v for %s", elapsed, name)
+			}
+			return
+		}
 		os.Remove(tmp)
-		// Fallback: direct removal.
-		if rmErr := os.Remove(path); rmErr != nil && os.IsPermission(rmErr) {
-			os.Chmod(dir, 0700)
-			os.Remove(path)
-		}
-		return
 	}
 
-	// Now path is a regular empty file — remove it without autofs concerns.
-	os.Remove(path)
+	// Strategy 3: direct os.Remove (may trigger autofs on macOS).
+	Debugf("removeSymlinkSafe: falling back to os.Remove for %s", name)
+	if rmErr := os.Remove(path); rmErr != nil && os.IsPermission(rmErr) {
+		os.Chmod(dir, 0700)
+		os.Remove(path)
+	}
+	elapsed := time.Since(start)
+	if elapsed > 100*time.Millisecond {
+		Debugf("removeSymlinkSafe: os.Remove took %v for %s", elapsed, name)
+	}
 }
 
 // CleanupPendingDeletions removes leftover tombstone directories in dir

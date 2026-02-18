@@ -47,20 +47,12 @@ func DeleteAgentFiles(agentName string, grovePath string, removeBranch bool) (bo
 		agentsDirs = append(agentsDirs, globalDir)
 	}
 
-	// Phase 1: worktree cleanup and tombstone collection.
-	// We complete all synchronous git operations before starting any
-	// async directory deletions, because the background goroutines can
-	// contend with git subprocess I/O on macOS/APFS (especially when
-	// the directory contains dangling symlinks that trigger autofs).
+	// Phase 1: synchronous git operations (worktree removal, pruning, branch cleanup).
+	// No background deletions happen here to avoid triggering macOS autofs
+	// in a goroutine that could block git subprocess I/O system-wide.
 	var dirsToDelete []string
 
 	for _, dir := range agentsDirs {
-		// Clean up tombstones from previous async deletions.
-		util.Debugf("delete: cleaning up pending deletions in %s", dir)
-		cleanupStart := time.Now()
-		util.CleanupPendingDeletions(dir)
-		util.Debugf("delete: pending deletion cleanup completed in %v", time.Since(cleanupStart))
-
 		agentDir := filepath.Join(dir, agentName)
 		if _, err := os.Stat(agentDir); err != nil {
 			continue
@@ -109,8 +101,9 @@ func DeleteAgentFiles(agentName string, grovePath string, removeBranch bool) (bo
 		}
 	}
 
-	// Phase 2: async directory removal. Now that all synchronous git
-	// operations are done, start the background deletions.
+	// Phase 2: async directory removal and tombstone cleanup.
+	// All git operations are done, so any autofs stalls from symlink
+	// deletion in background goroutines won't block git commands.
 	for _, agentDir := range dirsToDelete {
 		util.Debugf("delete: removing directory: %s", agentDir)
 		removeStart := time.Now()
@@ -119,6 +112,17 @@ func DeleteAgentFiles(agentName string, grovePath string, removeBranch bool) (bo
 			return branchDeleted, fmt.Errorf("failed to remove agent directory: %w", err)
 		}
 		util.Debugf("delete: removal initiated in %v", time.Since(removeStart))
+	}
+
+	// Clean up tombstones from previous async deletions.
+	// This runs after git operations and agent directory renaming,
+	// so any autofs stalls happen in background goroutines that don't
+	// block the visible delete operation.
+	for _, dir := range agentsDirs {
+		util.Debugf("delete: cleaning up pending deletions in %s", dir)
+		cleanupStart := time.Now()
+		util.CleanupPendingDeletions(dir)
+		util.Debugf("delete: pending deletion cleanup completed in %v", time.Since(cleanupStart))
 	}
 
 	return branchDeleted, nil
