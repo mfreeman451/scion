@@ -20,7 +20,7 @@ import (
 	"testing"
 )
 
-func TestInitProject_CreatesDefaultAgnosticTemplate(t *testing.T) {
+func TestInitProject_CreatesEmptyTemplatesDir(t *testing.T) {
 	// Create a temporary directory for the project
 	tempDir, err := os.MkdirTemp("", "scion-init-test")
 	if err != nil {
@@ -34,19 +34,16 @@ func TestInitProject_CreatesDefaultAgnosticTemplate(t *testing.T) {
 		t.Fatalf("InitProject failed: %v", err)
 	}
 
-	// Verify that templates/default exists (agnostic template)
-	defaultDir := filepath.Join(tempDir, "templates", "default")
-	if _, err := os.Stat(defaultDir); os.IsNotExist(err) {
-		t.Errorf("Expected templates/default to be created, but it was not")
+	// Verify that templates/ directory exists
+	templatesDir := filepath.Join(tempDir, "templates")
+	if info, err := os.Stat(templatesDir); err != nil || !info.IsDir() {
+		t.Fatalf("Expected templates/ directory to exist at %s", templatesDir)
 	}
 
-	// Verify agnostic template files exist
-	expectedFiles := []string{"scion-agent.yaml", "agents.md", "system-prompt.md"}
-	for _, f := range expectedFiles {
-		path := filepath.Join(defaultDir, f)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			t.Errorf("Expected %s to be created in default template, but it was not", f)
-		}
+	// Verify that templates/default does NOT exist (default template lives in global grove only)
+	defaultDir := filepath.Join(tempDir, "templates", "default")
+	if _, err := os.Stat(defaultDir); !os.IsNotExist(err) {
+		t.Errorf("Expected templates/default to NOT exist at project level, but it does at %s", defaultDir)
 	}
 
 	// Verify per-harness templates were NOT created

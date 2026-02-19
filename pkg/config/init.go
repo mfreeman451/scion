@@ -362,13 +362,12 @@ func InitProject(targetDir string, harnesses []api.Harness) error {
 	templatesDir := filepath.Join(projectDir, "templates")
 	agentsDir := filepath.Join(projectDir, "agents")
 
-	if err := os.MkdirAll(agentsDir, 0755); err != nil {
-		return fmt.Errorf("failed to create agents directory: %w", err)
+	if err := os.MkdirAll(templatesDir, 0755); err != nil {
+		return fmt.Errorf("failed to create templates directory: %w", err)
 	}
 
-	// Seed default agnostic template
-	if err := SeedAgnosticTemplate(filepath.Join(templatesDir, "default"), false); err != nil {
-		return fmt.Errorf("failed to seed default agnostic template: %w", err)
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		return fmt.Errorf("failed to create agents directory: %w", err)
 	}
 
 	return nil

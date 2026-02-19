@@ -309,7 +309,7 @@ func TestSeedAgnosticTemplate_ForceOverwrite(t *testing.T) {
 	}
 }
 
-func TestInitProject_SeedsAgnosticTemplate(t *testing.T) {
+func TestInitProject_EmptyTemplatesDir(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Override HOME for global templates
@@ -324,14 +324,16 @@ func TestInitProject_SeedsAgnosticTemplate(t *testing.T) {
 		t.Fatalf("InitProject failed: %v", err)
 	}
 
-	// Verify default agnostic template was created (including home/ files)
+	// Verify templates/ directory exists
+	templatesDir := filepath.Join(projectDir, "templates")
+	if info, err := os.Stat(templatesDir); err != nil || !info.IsDir() {
+		t.Fatalf("expected templates/ directory to exist at %s", templatesDir)
+	}
+
+	// Verify templates/default/ does NOT exist (default template lives in global grove only)
 	defaultTplDir := filepath.Join(projectDir, "templates", "default")
-	expectedFiles := []string{"scion-agent.yaml", "agents.md", "system-prompt.md", "home/.tmux.conf", "home/.zshrc"}
-	for _, f := range expectedFiles {
-		path := filepath.Join(defaultTplDir, f)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			t.Errorf("expected default template file %s to exist at %s", f, path)
-		}
+	if _, err := os.Stat(defaultTplDir); !os.IsNotExist(err) {
+		t.Errorf("expected templates/default/ to NOT exist at project level, but it does at %s", defaultTplDir)
 	}
 }
 

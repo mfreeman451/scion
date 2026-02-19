@@ -83,11 +83,10 @@ With --global, it initializes in the user's home folder.`,
 			return nil
 		}
 
-		// Check if ~/.scion/ exists; if not, print guidance
+		// Check if ~/.scion/ exists; error if not since global grove is required
 		if globalDir, err := config.GetGlobalDir(); err == nil {
 			if _, err := os.Stat(globalDir); os.IsNotExist(err) {
-				fmt.Fprintf(os.Stderr, "Warning: Global scion directory (~/.scion/) does not exist.\n")
-				fmt.Fprintf(os.Stderr, "Run 'scion init --machine' first for full machine-level setup.\n\n")
+				return fmt.Errorf("global scion directory (~/.scion/) does not exist.\nRun 'scion init --machine' first to set up the global configuration")
 			}
 		}
 

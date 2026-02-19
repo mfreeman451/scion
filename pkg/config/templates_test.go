@@ -185,15 +185,18 @@ func TestUpdateDefaultTemplates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Initialize project (creates default agnostic template)
+	// Initialize project (creates empty templates/ dir, no default template)
 	if err := InitProject("", GetMockHarnesses()); err != nil {
 		t.Fatal(err)
 	}
 
 	defaultScionYAML := filepath.Join(projectDir, "templates", "default", "scion-agent.yaml")
 
-	// Corrupt the default template file
+	// Manually create and corrupt the default template file
 	corruptContent := "CORRUPT"
+	if err := os.MkdirAll(filepath.Dir(defaultScionYAML), 0755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(defaultScionYAML, []byte(corruptContent), 0644); err != nil {
 		t.Fatal(err)
 	}
