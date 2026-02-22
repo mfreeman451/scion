@@ -211,6 +211,188 @@ func TestAgentStatusUpdate(t *testing.T) {
 	assert.Equal(t, "Up 5 minutes", retrieved.ContainerStatus)
 }
 
+func TestSoftDeleteFilterExclusion(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+
+	// Create grove
+	grove := &store.Grove{
+		ID:         api.NewUUID(),
+		Name:       "Test Grove",
+		Slug:       "test-grove-sd",
+		Visibility: store.VisibilityPrivate,
+	}
+	require.NoError(t, s.CreateGrove(ctx, grove))
+
+	// Create 3 agents: 2 running, 1 soft-deleted
+	for i := 0; i < 3; i++ {
+		agent := &store.Agent{
+			ID:         api.NewUUID(),
+			Slug:       api.Slugify("sd-agent-" + string(rune('a'+i))),
+			Name:       "SD Agent " + string(rune('A'+i)),
+			Template:   "claude",
+			GroveID:    grove.ID,
+			Status:     store.AgentStatusRunning,
+			Visibility: store.VisibilityPrivate,
+		}
+		if i == 2 {
+			agent.Status = store.AgentStatusDeleted
+			agent.DeletedAt = time.Now()
+		}
+		require.NoError(t, s.CreateAgent(ctx, agent))
+	}
+
+	// List without IncludeDeleted: should see 2
+	result, err := s.ListAgents(ctx, store.AgentFilter{}, store.ListOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, 2, result.TotalCount)
+	assert.Len(t, result.Items, 2)
+	for _, a := range result.Items {
+		assert.NotEqual(t, store.AgentStatusDeleted, a.Status)
+	}
+
+	// List with IncludeDeleted: should see 3
+	result, err = s.ListAgents(ctx, store.AgentFilter{IncludeDeleted: true}, store.ListOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, 3, result.TotalCount)
+	assert.Len(t, result.Items, 3)
+
+	// List with Status=deleted: should see 1 (the deleted one)
+	result, err = s.ListAgents(ctx, store.AgentFilter{Status: store.AgentStatusDeleted}, store.ListOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, result.TotalCount)
+	assert.Len(t, result.Items, 1)
+	assert.Equal(t, store.AgentStatusDeleted, result.Items[0].Status)
+}
+
+func TestPurgeDeletedAgents(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+
+	grove := &store.Grove{
+		ID:         api.NewUUID(),
+		Name:       "Test Grove",
+		Slug:       "test-grove-purge",
+		Visibility: store.VisibilityPrivate,
+	}
+	require.NoError(t, s.CreateGrove(ctx, grove))
+
+	now := time.Now()
+
+	// Create 2 deleted agents: one expired (old), one recent
+	oldAgent := &store.Agent{
+		ID:         api.NewUUID(),
+		Slug:       "old-deleted",
+		Name:       "Old Deleted",
+		Template:   "claude",
+		GroveID:    grove.ID,
+		Status:     store.AgentStatusDeleted,
+		DeletedAt:  now.Add(-48 * time.Hour),
+		Visibility: store.VisibilityPrivate,
+	}
+	recentAgent := &store.Agent{
+		ID:         api.NewUUID(),
+		Slug:       "recent-deleted",
+		Name:       "Recent Deleted",
+		Template:   "claude",
+		GroveID:    grove.ID,
+		Status:     store.AgentStatusDeleted,
+		DeletedAt:  now.Add(-1 * time.Hour),
+		Visibility: store.VisibilityPrivate,
+	}
+	activeAgent := &store.Agent{
+		ID:         api.NewUUID(),
+		Slug:       "active-agent",
+		Name:       "Active Agent",
+		Template:   "claude",
+		GroveID:    grove.ID,
+		Status:     store.AgentStatusRunning,
+		Visibility: store.VisibilityPrivate,
+	}
+	require.NoError(t, s.CreateAgent(ctx, oldAgent))
+	require.NoError(t, s.CreateAgent(ctx, recentAgent))
+	require.NoError(t, s.CreateAgent(ctx, activeAgent))
+
+	// Purge with cutoff of 24h ago: should only purge the old one
+	cutoff := now.Add(-24 * time.Hour)
+	purged, err := s.PurgeDeletedAgents(ctx, cutoff)
+	require.NoError(t, err)
+	assert.Equal(t, 1, purged)
+
+	// Old agent should be gone
+	_, err = s.GetAgent(ctx, oldAgent.ID)
+	assert.ErrorIs(t, err, store.ErrNotFound)
+
+	// Recent deleted agent should still exist
+	_, err = s.GetAgent(ctx, recentAgent.ID)
+	require.NoError(t, err)
+
+	// Active agent should still exist
+	_, err = s.GetAgent(ctx, activeAgent.ID)
+	require.NoError(t, err)
+}
+
+func TestDeletedAtPersistence(t *testing.T) {
+	s := setupTestStore(t)
+	ctx := context.Background()
+
+	grove := &store.Grove{
+		ID:         api.NewUUID(),
+		Name:       "Test Grove",
+		Slug:       "test-grove-dat",
+		Visibility: store.VisibilityPrivate,
+	}
+	require.NoError(t, s.CreateGrove(ctx, grove))
+
+	// Create and soft-delete an agent
+	agent := &store.Agent{
+		ID:         api.NewUUID(),
+		Slug:       "soft-del-test",
+		Name:       "Soft Delete Test",
+		Template:   "claude",
+		GroveID:    grove.ID,
+		Status:     store.AgentStatusRunning,
+		Visibility: store.VisibilityPrivate,
+	}
+	require.NoError(t, s.CreateAgent(ctx, agent))
+
+	// Verify DeletedAt is zero initially
+	retrieved, err := s.GetAgent(ctx, agent.ID)
+	require.NoError(t, err)
+	assert.True(t, retrieved.DeletedAt.IsZero())
+
+	// Soft-delete
+	deletedAt := time.Now().Truncate(time.Second)
+	retrieved.Status = store.AgentStatusDeleted
+	retrieved.DeletedAt = deletedAt
+	retrieved.Updated = time.Now()
+	require.NoError(t, s.UpdateAgent(ctx, retrieved))
+
+	// Retrieve and verify DeletedAt is set
+	retrieved2, err := s.GetAgent(ctx, agent.ID)
+	require.NoError(t, err)
+	assert.Equal(t, store.AgentStatusDeleted, retrieved2.Status)
+	assert.False(t, retrieved2.DeletedAt.IsZero())
+	assert.WithinDuration(t, deletedAt, retrieved2.DeletedAt, time.Second)
+
+	// Verify GetAgentBySlug also returns DeletedAt
+	bySlug, err := s.GetAgentBySlug(ctx, grove.ID, "soft-del-test")
+	require.NoError(t, err)
+	assert.Equal(t, store.AgentStatusDeleted, bySlug.Status)
+	assert.False(t, bySlug.DeletedAt.IsZero())
+
+	// Verify restore clears DeletedAt
+	bySlug.Status = store.AgentStatusRestored
+	bySlug.DeletedAt = time.Time{}
+	bySlug.Updated = time.Now()
+	require.NoError(t, s.UpdateAgent(ctx, bySlug))
+
+	restored, err := s.GetAgent(ctx, agent.ID)
+	require.NoError(t, err)
+	assert.Equal(t, store.AgentStatusRestored, restored.Status)
+	assert.True(t, restored.DeletedAt.IsZero())
+}
+
 // ============================================================================
 // Grove Tests
 // ============================================================================
