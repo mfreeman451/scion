@@ -161,7 +161,7 @@ func setupNotificationTest(t *testing.T) *notificationTestEnv {
 		SubscriberType:  store.SubscriberTypeAgent,
 		SubscriberID:    subscriber.Slug,
 		GroveID:         grove.ID,
-		TriggerStatuses: []string{"COMPLETED", "WAITING_FOR_INPUT"},
+		TriggerActivities: []string{"COMPLETED", "WAITING_FOR_INPUT"},
 		CreatedAt:       time.Now(),
 		CreatedBy:       "test",
 	}
@@ -375,7 +375,7 @@ func TestNotificationDispatcher_UserSubscriber(t *testing.T) {
 		SubscriberType:  store.SubscriberTypeUser,
 		SubscriberID:    "user-123",
 		GroveID:         env.grove.ID,
-		TriggerStatuses: []string{"COMPLETED"},
+		TriggerActivities: []string{"COMPLETED"},
 		CreatedAt:       time.Now(),
 		CreatedBy:       "test",
 	}
@@ -528,7 +528,7 @@ func TestNotificationDispatcher_MultipleSubscribers(t *testing.T) {
 		SubscriberType:  store.SubscriberTypeUser,
 		SubscriberID:    "user-456",
 		GroveID:         env.grove.ID,
-		TriggerStatuses: []string{"COMPLETED"},
+		TriggerActivities: []string{"COMPLETED"},
 		CreatedAt:       time.Now(),
 		CreatedBy:       "test",
 	}

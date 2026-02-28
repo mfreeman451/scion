@@ -102,7 +102,7 @@ func (nd *NotificationDispatcher) handleEvent(evt Event) {
 
 	for i := range subs {
 		sub := &subs[i]
-		if !sub.MatchesStatus(matchStatus) {
+		if !sub.MatchesActivity(matchStatus) {
 			continue
 		}
 

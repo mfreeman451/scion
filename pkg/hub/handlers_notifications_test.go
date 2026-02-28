@@ -64,7 +64,7 @@ func setupNotificationHandlerTest(t *testing.T) (*Server, store.Store, string) {
 		SubscriberType:  store.SubscriberTypeUser,
 		SubscriberID:    userID,
 		GroveID:         grove.ID,
-		TriggerStatuses: []string{"COMPLETED", "WAITING_FOR_INPUT"},
+		TriggerActivities: []string{"COMPLETED", "WAITING_FOR_INPUT"},
 		CreatedAt:       time.Now(),
 		CreatedBy:       "test",
 	}

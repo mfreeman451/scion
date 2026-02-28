@@ -69,7 +69,7 @@ func TestNotificationSubscriptionCRUD(t *testing.T) {
 		SubscriberType:  store.SubscriberTypeAgent,
 		SubscriberID:    "lead-agent",
 		GroveID:         groveID,
-		TriggerStatuses: []string{"COMPLETED", "WAITING_FOR_INPUT", "LIMITS_EXCEEDED"},
+		TriggerActivities: []string{"COMPLETED", "WAITING_FOR_INPUT", "LIMITS_EXCEEDED"},
 		CreatedBy:       "lead-agent",
 	}
 
@@ -87,7 +87,7 @@ func TestNotificationSubscriptionCRUD(t *testing.T) {
 	assert.Equal(t, store.SubscriberTypeAgent, subs[0].SubscriberType)
 	assert.Equal(t, "lead-agent", subs[0].SubscriberID)
 	assert.Equal(t, groveID, subs[0].GroveID)
-	assert.Equal(t, []string{"COMPLETED", "WAITING_FOR_INPUT", "LIMITS_EXCEEDED"}, subs[0].TriggerStatuses)
+	assert.Equal(t, []string{"COMPLETED", "WAITING_FOR_INPUT", "LIMITS_EXCEEDED"}, subs[0].TriggerActivities)
 
 	// Get by grove
 	subs, err = s.GetNotificationSubscriptionsByGrove(ctx, groveID)
@@ -120,7 +120,7 @@ func TestNotificationSubscriptionFKConstraint(t *testing.T) {
 		SubscriberType:  store.SubscriberTypeAgent,
 		SubscriberID:    "lead-agent",
 		GroveID:         "some-grove",
-		TriggerStatuses: []string{"COMPLETED"},
+		TriggerActivities: []string{"COMPLETED"},
 		CreatedBy:       "lead-agent",
 	}
 
@@ -142,7 +142,7 @@ func TestNotificationSubscriptionCascadeDelete(t *testing.T) {
 		SubscriberType:  store.SubscriberTypeAgent,
 		SubscriberID:    "lead-agent",
 		GroveID:         groveID,
-		TriggerStatuses: []string{"COMPLETED"},
+		TriggerActivities: []string{"COMPLETED"},
 		CreatedBy:       "lead-agent",
 	}
 	require.NoError(t, s.CreateNotificationSubscription(ctx, sub))
@@ -194,7 +194,7 @@ func TestBulkDeleteSubscriptions(t *testing.T) {
 			SubscriberType:  store.SubscriberTypeAgent,
 			SubscriberID:    "subscriber-" + uuid.New().String()[:8],
 			GroveID:         groveID,
-			TriggerStatuses: []string{"COMPLETED"},
+			TriggerActivities: []string{"COMPLETED"},
 			CreatedBy:       "test",
 		}
 		require.NoError(t, s.CreateNotificationSubscription(ctx, sub))
@@ -232,7 +232,7 @@ func TestNotificationCRUD(t *testing.T) {
 		SubscriberType:  store.SubscriberTypeUser,
 		SubscriberID:    "user-123",
 		GroveID:         groveID,
-		TriggerStatuses: []string{"COMPLETED", "WAITING_FOR_INPUT"},
+		TriggerActivities: []string{"COMPLETED", "WAITING_FOR_INPUT"},
 		CreatedBy:       "user-123",
 	}
 	require.NoError(t, s.CreateNotificationSubscription(ctx, sub))
@@ -292,7 +292,7 @@ func TestNotificationFiltering(t *testing.T) {
 		SubscriberType:  store.SubscriberTypeUser,
 		SubscriberID:    "filter-user",
 		GroveID:         groveID,
-		TriggerStatuses: []string{"COMPLETED"},
+		TriggerActivities: []string{"COMPLETED"},
 		CreatedBy:       "filter-user",
 	}
 	require.NoError(t, s.CreateNotificationSubscription(ctx, sub))
@@ -352,7 +352,7 @@ func TestMarkNotificationDispatched(t *testing.T) {
 		SubscriberType:  store.SubscriberTypeAgent,
 		SubscriberID:    "dispatch-target",
 		GroveID:         groveID,
-		TriggerStatuses: []string{"COMPLETED"},
+		TriggerActivities: []string{"COMPLETED"},
 		CreatedBy:       "test",
 	}
 	require.NoError(t, s.CreateNotificationSubscription(ctx, sub))
@@ -403,7 +403,7 @@ func TestAcknowledgeAllNotifications(t *testing.T) {
 		SubscriberType:  store.SubscriberTypeUser,
 		SubscriberID:    "ack-all-user",
 		GroveID:         groveID,
-		TriggerStatuses: []string{"COMPLETED"},
+		TriggerActivities: []string{"COMPLETED"},
 		CreatedBy:       "ack-all-user",
 	}
 	require.NoError(t, s.CreateNotificationSubscription(ctx, sub))
@@ -459,7 +459,7 @@ func TestGetLastNotificationStatus(t *testing.T) {
 		SubscriberType:  store.SubscriberTypeAgent,
 		SubscriberID:    "last-status-agent",
 		GroveID:         groveID,
-		TriggerStatuses: []string{"COMPLETED", "WAITING_FOR_INPUT"},
+		TriggerActivities: []string{"COMPLETED", "WAITING_FOR_INPUT"},
 		CreatedBy:       "test",
 	}
 	require.NoError(t, s.CreateNotificationSubscription(ctx, sub))
@@ -506,30 +506,30 @@ func TestGetLastNotificationStatus(t *testing.T) {
 	assert.Equal(t, "COMPLETED", status)
 }
 
-func TestMatchesStatus(t *testing.T) {
+func TestMatchesActivity(t *testing.T) {
 	sub := &store.NotificationSubscription{
-		TriggerStatuses: []string{"COMPLETED", "WAITING_FOR_INPUT"},
+		TriggerActivities: []string{"COMPLETED", "WAITING_FOR_INPUT"},
 	}
 
 	// Case-insensitive matching
-	assert.True(t, sub.MatchesStatus("COMPLETED"))
-	assert.True(t, sub.MatchesStatus("completed"))
-	assert.True(t, sub.MatchesStatus("Completed"))
-	assert.True(t, sub.MatchesStatus("waiting_for_input"))
-	assert.True(t, sub.MatchesStatus("WAITING_FOR_INPUT"))
+	assert.True(t, sub.MatchesActivity("COMPLETED"))
+	assert.True(t, sub.MatchesActivity("completed"))
+	assert.True(t, sub.MatchesActivity("Completed"))
+	assert.True(t, sub.MatchesActivity("waiting_for_input"))
+	assert.True(t, sub.MatchesActivity("WAITING_FOR_INPUT"))
 
 	// Non-matching
-	assert.False(t, sub.MatchesStatus("RUNNING"))
-	assert.False(t, sub.MatchesStatus("error"))
-	assert.False(t, sub.MatchesStatus(""))
+	assert.False(t, sub.MatchesActivity("RUNNING"))
+	assert.False(t, sub.MatchesActivity("error"))
+	assert.False(t, sub.MatchesActivity(""))
 
 	// Empty trigger list
 	emptySub := &store.NotificationSubscription{
-		TriggerStatuses: []string{},
+		TriggerActivities: []string{},
 	}
-	assert.False(t, emptySub.MatchesStatus("COMPLETED"))
+	assert.False(t, emptySub.MatchesActivity("COMPLETED"))
 
 	// Nil trigger list
 	nilSub := &store.NotificationSubscription{}
-	assert.False(t, nilSub.MatchesStatus("COMPLETED"))
+	assert.False(t, nilSub.MatchesActivity("COMPLETED"))
 }

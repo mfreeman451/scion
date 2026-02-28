@@ -91,6 +91,7 @@ func (s *SQLiteStore) Migrate(ctx context.Context) error {
 		migrationV19,
 		migrationV20,
 		migrationV21,
+		migrationV22,
 	}
 
 	// Create migrations table if not exists
@@ -635,6 +636,11 @@ DROP INDEX IF EXISTS idx_agents_status;
 
 -- Drop the status column (SQLite supports this from 3.35.0+)
 ALTER TABLE agents DROP COLUMN status;
+`
+
+// Migration V22: Rename trigger_statuses to trigger_activities in notification_subscriptions.
+const migrationV22 = `
+ALTER TABLE notification_subscriptions RENAME COLUMN trigger_statuses TO trigger_activities;
 `
 
 // Helper functions for JSON marshaling/unmarshaling

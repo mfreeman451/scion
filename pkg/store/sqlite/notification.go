@@ -44,11 +44,11 @@ func (s *SQLiteStore) CreateNotificationSubscription(ctx context.Context, sub *s
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO notification_subscriptions (
 			id, agent_id, subscriber_type, subscriber_id, grove_id,
-			trigger_statuses, created_at, created_by
+			trigger_activities, created_at, created_by
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		sub.ID, sub.AgentID, sub.SubscriberType, sub.SubscriberID, sub.GroveID,
-		marshalJSON(sub.TriggerStatuses), sub.CreatedAt, sub.CreatedBy,
+		marshalJSON(sub.TriggerActivities), sub.CreatedAt, sub.CreatedBy,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -66,7 +66,7 @@ func (s *SQLiteStore) CreateNotificationSubscription(ctx context.Context, sub *s
 func (s *SQLiteStore) GetNotificationSubscriptions(ctx context.Context, agentID string) ([]store.NotificationSubscription, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, agent_id, subscriber_type, subscriber_id, grove_id,
-			trigger_statuses, created_at, created_by
+			trigger_activities, created_at, created_by
 		FROM notification_subscriptions
 		WHERE agent_id = ?
 		ORDER BY created_at ASC
@@ -83,7 +83,7 @@ func (s *SQLiteStore) GetNotificationSubscriptions(ctx context.Context, agentID 
 func (s *SQLiteStore) GetNotificationSubscriptionsByGrove(ctx context.Context, groveID string) ([]store.NotificationSubscription, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, agent_id, subscriber_type, subscriber_id, grove_id,
-			trigger_statuses, created_at, created_by
+			trigger_activities, created_at, created_by
 		FROM notification_subscriptions
 		WHERE grove_id = ?
 		ORDER BY created_at ASC
@@ -273,16 +273,16 @@ func scanSubscriptions(rows *sql.Rows) ([]store.NotificationSubscription, error)
 	var subs []store.NotificationSubscription
 	for rows.Next() {
 		var sub store.NotificationSubscription
-		var triggerStatusesJSON string
+		var triggerActivitiesJSON string
 
 		if err := rows.Scan(
 			&sub.ID, &sub.AgentID, &sub.SubscriberType, &sub.SubscriberID, &sub.GroveID,
-			&triggerStatusesJSON, &sub.CreatedAt, &sub.CreatedBy,
+			&triggerActivitiesJSON, &sub.CreatedAt, &sub.CreatedBy,
 		); err != nil {
 			return nil, err
 		}
 
-		unmarshalJSON(triggerStatusesJSON, &sub.TriggerStatuses)
+		unmarshalJSON(triggerActivitiesJSON, &sub.TriggerActivities)
 		subs = append(subs, sub)
 	}
 	if err := rows.Err(); err != nil {

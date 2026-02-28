@@ -2259,9 +2259,9 @@ func TestCreateAgent_NotifyCreatesSubscription(t *testing.T) {
 		assert.Equal(t, callingAgent.Slug, sub.SubscriberID)
 		assert.Equal(t, grove.ID, sub.GroveID)
 		assert.Equal(t, callingAgent.ID, sub.CreatedBy)
-		assert.Contains(t, sub.TriggerStatuses, "COMPLETED")
-		assert.Contains(t, sub.TriggerStatuses, "WAITING_FOR_INPUT")
-		assert.Contains(t, sub.TriggerStatuses, "LIMITS_EXCEEDED")
+		assert.Contains(t, sub.TriggerActivities, "COMPLETED")
+		assert.Contains(t, sub.TriggerActivities, "WAITING_FOR_INPUT")
+		assert.Contains(t, sub.TriggerActivities, "LIMITS_EXCEEDED")
 	})
 
 	t.Run("Notify=false does not create subscription", func(t *testing.T) {

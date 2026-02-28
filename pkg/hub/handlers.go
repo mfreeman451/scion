@@ -524,7 +524,7 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 			SubscriberType:  notifySubscriberType,
 			SubscriberID:    notifySubscriberID,
 			GroveID:         req.GroveID,
-			TriggerStatuses: []string{"COMPLETED", "WAITING_FOR_INPUT", "LIMITS_EXCEEDED"},
+			TriggerActivities: []string{"COMPLETED", "WAITING_FOR_INPUT", "LIMITS_EXCEEDED"},
 			CreatedAt:       time.Now(),
 			CreatedBy:       createdBy,
 		}

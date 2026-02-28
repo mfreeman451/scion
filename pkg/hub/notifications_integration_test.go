@@ -760,7 +760,7 @@ func TestIntegration_MultipleSubscribers_AgentAndUser(t *testing.T) {
 		SubscriberType:  store.SubscriberTypeUser,
 		SubscriberID:    "dev-user",
 		GroveID:         env.grove.ID,
-		TriggerStatuses: []string{"COMPLETED"},
+		TriggerActivities: []string{"COMPLETED"},
 		CreatedAt:       time.Now(),
 		CreatedBy:       "dev-user",
 	}

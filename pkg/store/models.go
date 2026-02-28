@@ -477,23 +477,23 @@ const (
 	SubscriberTypeUser  = "user"
 )
 
-// NotificationSubscription represents a subscription to agent status changes.
+// NotificationSubscription represents a subscription to agent activity changes.
 type NotificationSubscription struct {
-	ID             string   `json:"id"`             // UUID primary key
-	AgentID        string   `json:"agentId"`        // Agent being watched
-	SubscriberType string   `json:"subscriberType"` // "agent" or "user"
-	SubscriberID   string   `json:"subscriberId"`   // Slug or ID of the subscriber
-	GroveID        string   `json:"groveId"`        // Grove scope
-	TriggerStatuses []string `json:"triggerStatuses"` // e.g. ["COMPLETED", "WAITING_FOR_INPUT"]
-	CreatedAt      time.Time `json:"createdAt"`
-	CreatedBy      string   `json:"createdBy"`
+	ID              string   `json:"id"`               // UUID primary key
+	AgentID         string   `json:"agentId"`          // Agent being watched
+	SubscriberType  string   `json:"subscriberType"`   // "agent" or "user"
+	SubscriberID    string   `json:"subscriberId"`     // Slug or ID of the subscriber
+	GroveID         string   `json:"groveId"`          // Grove scope
+	TriggerActivities []string `json:"triggerActivities"` // e.g. ["COMPLETED", "WAITING_FOR_INPUT"]
+	CreatedAt       time.Time `json:"createdAt"`
+	CreatedBy       string   `json:"createdBy"`
 }
 
-// MatchesStatus returns true if the given status matches any of the subscription's
-// trigger statuses. Comparison is case-insensitive.
-func (s *NotificationSubscription) MatchesStatus(status string) bool {
-	normalized := strings.ToUpper(status)
-	for _, trigger := range s.TriggerStatuses {
+// MatchesActivity returns true if the given activity matches any of the subscription's
+// trigger activities. Comparison is case-insensitive.
+func (s *NotificationSubscription) MatchesActivity(activity string) bool {
+	normalized := strings.ToUpper(activity)
+	for _, trigger := range s.TriggerActivities {
 		if strings.ToUpper(trigger) == normalized {
 			return true
 		}
