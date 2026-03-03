@@ -24,16 +24,26 @@ echo ""
 echo "--- Step 1: Provisioning Infrastructure ---"
 ./hack/gce-demo-provision.sh
 
-# Step 2: Setup Repository
+# Step 2: Telemetry Service Account
 echo ""
-echo "--- Step 2: Setting up Repository ---"
+echo "--- Step 2: Creating Telemetry Service Account ---"
+./hack/gce-demo-telemetry-sa.sh
+
+# Step 3: Setup Repository
+echo ""
+echo "--- Step 3: Setting up Repository ---"
 ./hack/gce-demo-setup-repo.sh
 
-# Step 3: Build and Start Hub
+# Step 4: Build and Start Hub
 echo ""
-echo "--- Step 3: Building and Starting Hub ---"
+echo "--- Step 4: Building and Starting Hub ---"
 ./hack/gce-start-hub.sh --full
 
 echo ""
 echo "=== Full Deployment Complete ==="
 echo "Your Scion Hub should now be available at https://hub.demo.scion-ai.dev"
+echo ""
+echo "Note: To enable agent telemetry, upload the GCP credentials key to the Hub:"
+echo "  scion secret set scion-telemetry-gcp-credentials \\"
+echo "    --type file --target '~/.scion/telemetry-gcp-credentials.json' \\"
+echo "    --from-file '.scratch/telemetry-gcp-credentials.json' --scope hub"

@@ -60,7 +60,12 @@ function delete_resources() {
     if [[ -f "hack/gce-demo-cluster.sh" ]]; then
         ./hack/gce-demo-cluster.sh delete
     fi
-    
+
+    # Telemetry SA deletion
+    if [[ -f "hack/gce-demo-telemetry-sa.sh" ]]; then
+        ./hack/gce-demo-telemetry-sa.sh delete
+    fi
+
     echo "=== Deletion Complete ==="
 }
 
