@@ -553,6 +553,39 @@ func TestBuildCommonRunArgs(t *testing.T) {
 
 		}
 
-		
+func TestGcloudMountPreCreatesDirectory(t *testing.T) {
+	// The gcloud auto-mount in buildCommonRunArgs should pre-create the
+	// mount-point directory inside the agent home so Docker does not create
+	// it as root (which makes the agent dir undeletable by non-root users).
+	home, _ := os.UserHomeDir()
+	gcloudDir := filepath.Join(home, ".config", "gcloud")
+	if _, err := os.Stat(gcloudDir); err != nil {
+		t.Skip("host does not have ~/.config/gcloud; skipping")
+	}
+
+	agentHome := t.TempDir()
+
+	_, err := buildCommonRunArgs(RunConfig{
+		Harness:      &harness.GeminiCLI{},
+		Name:         "test-agent",
+		UnixUsername: "scion",
+		Image:        "scion-agent:latest",
+		HomeDir:      agentHome,
+	})
+	if err != nil {
+		t.Fatalf("buildCommonRunArgs failed: %v", err)
+	}
+
+	mountPoint := filepath.Join(agentHome, ".config", "gcloud")
+	info, err := os.Stat(mountPoint)
+	if err != nil {
+		t.Fatalf("expected %s to exist after buildCommonRunArgs, got: %v", mountPoint, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected %s to be a directory", mountPoint)
+	}
+}
+
+
 
 	
