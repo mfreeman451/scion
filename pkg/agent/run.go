@@ -246,6 +246,9 @@ func (m *AgentManager) Start(ctx context.Context, opts api.StartOptions) (*api.A
 		if err != nil {
 			return nil, fmt.Errorf("auth resolution failed: %w", err)
 		}
+		if err := harness.ValidateAuth(resolved); err != nil {
+			return nil, fmt.Errorf("auth validation failed: %w", err)
+		}
 		resolvedAuth = resolved
 	}
 

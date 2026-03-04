@@ -332,10 +332,11 @@ For file-type secrets, the Hub stores base64-encoded content and the runtime pro
 - Removed `Auth` field from `RunConfig` and M1 backward-compat auth fallback in k8s_runtime
 - Simplified `Provision()` in codex/opencode (were calling removed methods)
 
-### Step 6: Validation and Error Reporting
-- Add `ValidateAuth()` that checks `ResolvedAuth` completeness before container launch
-- Each harness's `ResolveAuth()` should produce clear, actionable error messages when auth is insufficient (e.g., "Claude requires ANTHROPIC_API_KEY or Vertex credentials (GOOGLE_APPLICATION_CREDENTIALS + GOOGLE_CLOUD_PROJECT + GOOGLE_CLOUD_REGION)")
-- Integrate with env-gather to only request what's actually needed
+### Step 6: Validation and Error Reporting ✅
+- Added `ValidateAuth()` in `pkg/harness/auth.go` — post-resolution safety net that checks method is set, env var values are non-empty, and credential files exist on disk
+- Wired into `agent.Start()` between `ResolveAuth()` and container launch
+- Each harness's `ResolveAuth()` already produces clear, actionable error messages (done in Step 3)
+- Env-gather integration via `RequiredEnvKeys()` + `extractRequiredEnvKeys()` already in place (done in Steps 3-4)
 
 ### Step 7: Documentation
 - Document the auth resolution flow and per-harness preference orders

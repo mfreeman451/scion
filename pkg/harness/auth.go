@@ -16,8 +16,10 @@ package harness
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ptone/scion-agent/pkg/api"
 	"github.com/ptone/scion-agent/pkg/config"
@@ -123,4 +125,42 @@ func OverlaySettings(auth *api.AuthConfig, h api.Harness, agentHome string) {
 	}
 
 	auth.SelectedType = selectedType
+}
+
+// ValidateAuth checks a ResolvedAuth for completeness before container launch.
+// It acts as a post-resolution safety net: ResolveAuth should produce correct
+// results, but ValidateAuth catches any bugs or race conditions (e.g., a
+// credential file deleted between GatherAuth and container launch).
+func ValidateAuth(resolved *api.ResolvedAuth) error {
+	if resolved == nil {
+		return fmt.Errorf("auth validation failed: resolved auth is nil")
+	}
+
+	if resolved.Method == "" {
+		return fmt.Errorf("auth validation failed: no auth method selected")
+	}
+
+	// Check for empty env var values — an env var with an empty value
+	// indicates a bug in ResolveAuth (it should not emit keys it cannot fill).
+	var emptyVars []string
+	for k, v := range resolved.EnvVars {
+		if v == "" {
+			emptyVars = append(emptyVars, k)
+		}
+	}
+	if len(emptyVars) > 0 {
+		return fmt.Errorf("auth validation failed: env vars have empty values: %s", strings.Join(emptyVars, ", "))
+	}
+
+	// Check file mappings: source must exist, container path must be set.
+	for _, f := range resolved.Files {
+		if f.ContainerPath == "" {
+			return fmt.Errorf("auth validation failed: file mapping for %q has no container path", f.SourcePath)
+		}
+		if _, err := os.Stat(f.SourcePath); err != nil {
+			return fmt.Errorf("auth validation failed: credential file %q does not exist: %w", f.SourcePath, err)
+		}
+	}
+
+	return nil
 }

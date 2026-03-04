@@ -17,7 +17,10 @@ package harness
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/ptone/scion-agent/pkg/api"
 )
 
 func TestGatherAuth_EnvVars(t *testing.T) {
@@ -201,5 +204,122 @@ func TestGatherAuth_NoFiles(t *testing.T) {
 	}
 	if auth.OpenCodeAuthFile != "" {
 		t.Errorf("OpenCodeAuthFile = %q, want empty", auth.OpenCodeAuthFile)
+	}
+}
+
+func TestValidateAuth_Valid(t *testing.T) {
+	resolved := &api.ResolvedAuth{
+		Method: "anthropic-api-key",
+		EnvVars: map[string]string{
+			"ANTHROPIC_API_KEY": "sk-ant-test",
+		},
+	}
+	if err := ValidateAuth(resolved); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateAuth_ValidWithFiles(t *testing.T) {
+	// Create a temp file to serve as source
+	tmpFile := filepath.Join(t.TempDir(), "creds.json")
+	os.WriteFile(tmpFile, []byte(`{"type":"test"}`), 0644)
+
+	resolved := &api.ResolvedAuth{
+		Method: "vertex-ai",
+		EnvVars: map[string]string{
+			"CLAUDE_CODE_USE_VERTEX": "1",
+		},
+		Files: []api.FileMapping{
+			{SourcePath: tmpFile, ContainerPath: "~/.config/gcp/adc.json"},
+		},
+	}
+	if err := ValidateAuth(resolved); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateAuth_Nil(t *testing.T) {
+	err := ValidateAuth(nil)
+	if err == nil {
+		t.Fatal("expected error for nil resolved auth")
+	}
+	if !strings.Contains(err.Error(), "nil") {
+		t.Errorf("error should mention nil: %v", err)
+	}
+}
+
+func TestValidateAuth_EmptyMethod(t *testing.T) {
+	resolved := &api.ResolvedAuth{
+		Method:  "",
+		EnvVars: map[string]string{"KEY": "value"},
+	}
+	err := ValidateAuth(resolved)
+	if err == nil {
+		t.Fatal("expected error for empty method")
+	}
+	if !strings.Contains(err.Error(), "no auth method") {
+		t.Errorf("error should mention missing method: %v", err)
+	}
+}
+
+func TestValidateAuth_EmptyEnvValue(t *testing.T) {
+	resolved := &api.ResolvedAuth{
+		Method: "test-method",
+		EnvVars: map[string]string{
+			"GOOD_KEY":  "value",
+			"EMPTY_KEY": "",
+		},
+	}
+	err := ValidateAuth(resolved)
+	if err == nil {
+		t.Fatal("expected error for empty env var value")
+	}
+	if !strings.Contains(err.Error(), "EMPTY_KEY") {
+		t.Errorf("error should mention EMPTY_KEY: %v", err)
+	}
+}
+
+func TestValidateAuth_MissingSourceFile(t *testing.T) {
+	resolved := &api.ResolvedAuth{
+		Method: "vertex-ai",
+		Files: []api.FileMapping{
+			{SourcePath: "/nonexistent/path/creds.json", ContainerPath: "~/.config/gcp/adc.json"},
+		},
+	}
+	err := ValidateAuth(resolved)
+	if err == nil {
+		t.Fatal("expected error for missing source file")
+	}
+	if !strings.Contains(err.Error(), "/nonexistent/path/creds.json") {
+		t.Errorf("error should mention the missing file path: %v", err)
+	}
+}
+
+func TestValidateAuth_EmptyContainerPath(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "creds.json")
+	os.WriteFile(tmpFile, []byte(`{"type":"test"}`), 0644)
+
+	resolved := &api.ResolvedAuth{
+		Method: "test-method",
+		Files: []api.FileMapping{
+			{SourcePath: tmpFile, ContainerPath: ""},
+		},
+	}
+	err := ValidateAuth(resolved)
+	if err == nil {
+		t.Fatal("expected error for empty container path")
+	}
+	if !strings.Contains(err.Error(), "no container path") {
+		t.Errorf("error should mention missing container path: %v", err)
+	}
+}
+
+func TestValidateAuth_EmptyEnvVarsAndFiles(t *testing.T) {
+	// A valid resolved auth can have no env vars and no files (e.g. passthrough)
+	resolved := &api.ResolvedAuth{
+		Method: "passthrough",
+	}
+	if err := ValidateAuth(resolved); err != nil {
+		t.Errorf("unexpected error for passthrough with no env/files: %v", err)
 	}
 }
