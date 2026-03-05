@@ -510,3 +510,61 @@ func TestGatherAuthWithEnv_OverlayAllKeys(t *testing.T) {
 		t.Errorf("GoogleAppCredentials = %q, want %q", auth.GoogleAppCredentials, "/ov/creds.json")
 	}
 }
+
+func TestOverlaySettings_ReadsScionAgentJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	agentHome := filepath.Join(tmpDir, "home")
+	os.MkdirAll(agentHome, 0755)
+
+	// Write scion-agent.json with a universal auth type
+	scionAgentPath := filepath.Join(tmpDir, "scion-agent.json")
+	os.WriteFile(scionAgentPath, []byte(`{"auth_selectedType": "auth-file"}`), 0644)
+
+	auth := api.AuthConfig{}
+	h := New("gemini")
+	OverlaySettings(&auth, h, agentHome)
+
+	if auth.SelectedType != "auth-file" {
+		t.Errorf("SelectedType = %q, want %q", auth.SelectedType, "auth-file")
+	}
+}
+
+func TestOverlaySettings_IgnoresHostGeminiSettings(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	// Write a host ~/.gemini/settings.json with a Gemini-internal auth type
+	geminiDir := filepath.Join(tmpHome, ".gemini")
+	os.MkdirAll(geminiDir, 0755)
+	os.WriteFile(filepath.Join(geminiDir, "settings.json"),
+		[]byte(`{"security":{"auth":{"selectedType":"oauth-personal"}}}`), 0644)
+
+	// Agent dir with no scion-agent.json (or one without auth_selectedType)
+	tmpDir := t.TempDir()
+	agentHome := filepath.Join(tmpDir, "home")
+	os.MkdirAll(agentHome, 0755)
+
+	auth := api.AuthConfig{}
+	h := New("gemini")
+	OverlaySettings(&auth, h, agentHome)
+
+	// Should NOT pick up "oauth-personal" from host Gemini settings
+	if auth.SelectedType != "" {
+		t.Errorf("SelectedType = %q, want empty (should not read host Gemini settings)", auth.SelectedType)
+	}
+}
+
+func TestOverlaySettings_NoScionAgentJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	agentHome := filepath.Join(tmpDir, "home")
+	os.MkdirAll(agentHome, 0755)
+
+	// No scion-agent.json exists
+	auth := api.AuthConfig{}
+	h := New("gemini")
+	OverlaySettings(&auth, h, agentHome)
+
+	if auth.SelectedType != "" {
+		t.Errorf("SelectedType = %q, want empty", auth.SelectedType)
+	}
+}

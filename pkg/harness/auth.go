@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	"github.com/ptone/scion-agent/pkg/api"
-	"github.com/ptone/scion-agent/pkg/config"
 	"github.com/ptone/scion-agent/pkg/util"
 )
 
@@ -99,25 +98,20 @@ func GatherAuthWithEnv(env map[string]string) api.AuthConfig {
 }
 
 // OverlaySettings applies settings-based overrides to an AuthConfig.
-// It reads AuthSelectedType from scion-agent.json (top-level), agent settings,
-// and host settings, in that priority order.
+// It reads AuthSelectedType from scion-agent.json (top-level), which is
+// populated from scion's settings chain during provisioning.
+// Note: we intentionally do NOT fall back to the host's harness settings
+// (e.g. ~/.gemini/settings.json) because those contain harness-internal
+// auth type values (like "oauth-personal") that are not valid universal types.
 func OverlaySettings(auth *api.AuthConfig, h api.Harness, agentHome string) {
 	selectedType := ""
 
-	// 1. Check scion-agent.json for top-level auth_selectedType
+	// Check scion-agent.json for top-level auth_selectedType
 	scionAgentPath := filepath.Join(filepath.Dir(agentHome), "scion-agent.json")
 	if data, err := os.ReadFile(scionAgentPath); err == nil {
 		var cfg api.ScionConfig
 		if err := json.Unmarshal(data, &cfg); err == nil {
 			selectedType = cfg.AuthSelectedType
-		}
-	}
-
-	// 2. Check host settings for fallbacks
-	hostSettings, _ := config.GetAgentSettings()
-	if hostSettings != nil {
-		if selectedType == "" {
-			selectedType = hostSettings.Security.Auth.SelectedType
 		}
 	}
 
