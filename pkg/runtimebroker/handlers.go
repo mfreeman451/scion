@@ -880,11 +880,12 @@ func (s *Server) startAgent(w http.ResponseWriter, r *http.Request, id string) {
 
 	// Read optional task, grovePath, groveSlug, harnessConfig, and resolvedEnv from request body
 	var startReq struct {
-		Task          string            `json:"task"`
-		GrovePath     string            `json:"grovePath"`
-		GroveSlug     string            `json:"groveSlug"`
-		HarnessConfig string            `json:"harnessConfig"`
-		ResolvedEnv   map[string]string `json:"resolvedEnv"`
+		Task            string               `json:"task"`
+		GrovePath       string               `json:"grovePath"`
+		GroveSlug       string               `json:"groveSlug"`
+		HarnessConfig   string               `json:"harnessConfig"`
+		ResolvedEnv     map[string]string     `json:"resolvedEnv"`
+		ResolvedSecrets []api.ResolvedSecret  `json:"resolvedSecrets,omitempty"`
 	}
 	if r.Body != nil && r.ContentLength != 0 {
 		if err := json.NewDecoder(r.Body).Decode(&startReq); err != nil {
@@ -1022,6 +1023,14 @@ func (s *Server) startAgent(w http.ResponseWriter, r *http.Request, id string) {
 		}
 	}
 
+	// Pass through resolved secrets from the Hub (file-type secrets for auth, etc.)
+	if len(startReq.ResolvedSecrets) > 0 {
+		opts.ResolvedSecrets = startReq.ResolvedSecrets
+		if s.config.Debug {
+			s.envSecretLog.Debug("Received resolved secrets from Hub in startAgent", "count", len(startReq.ResolvedSecrets))
+		}
+	}
+
 	// Resolve saved profile for runtime selection
 	if opts.GrovePath != "" {
 		opts.Profile = agent.GetSavedProfile(id, opts.GrovePath)
@@ -1030,10 +1039,6 @@ func (s *Server) startAgent(w http.ResponseWriter, r *http.Request, id string) {
 	mgr := s.resolveManagerForOpts(opts)
 	agentInfo, err := mgr.Start(ctx, opts)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			NotFound(w, "Agent")
-			return
-		}
 		RuntimeError(w, "Failed to start agent: "+err.Error())
 		return
 	}

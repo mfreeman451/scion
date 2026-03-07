@@ -185,7 +185,8 @@ type RuntimeBrokerClient interface {
 	// groveSlug is the grove slug for hub-native groves (no local provider path).
 	// resolvedEnv contains environment variables resolved from Hub storage (API keys, etc.).
 	// harnessConfig is the harness config name to use for the agent (e.g. "claude", "gemini").
-	StartAgent(ctx context.Context, brokerID, brokerEndpoint, agentID, task, grovePath, groveSlug, harnessConfig string, resolvedEnv map[string]string) (*RemoteAgentResponse, error)
+	// resolvedSecrets contains type-aware secrets (including file-type) for auth resolution.
+	StartAgent(ctx context.Context, brokerID, brokerEndpoint, agentID, task, grovePath, groveSlug, harnessConfig string, resolvedEnv map[string]string, resolvedSecrets []ResolvedSecret) (*RemoteAgentResponse, error)
 
 	// StopAgent stops an agent on a remote runtime broker.
 	// brokerID is used for HMAC authentication lookup.
