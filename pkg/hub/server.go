@@ -795,7 +795,7 @@ func (s *Server) CreateAuthenticatedDispatcher() *HTTPAgentDispatcher {
 	// Wrap with hybrid client that prefers control channel
 	var client RuntimeBrokerClient
 	if s.controlChannel != nil {
-		client = NewHybridBrokerClient(s.controlChannel, httpClient, s.config.Debug)
+		client = NewHybridBrokerClient(s.controlChannel, httpClient, &hmacBrokerSigner{store: s.store}, s.config.Debug)
 	} else {
 		client = httpClient
 	}

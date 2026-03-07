@@ -15,9 +15,11 @@
 package hub
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -30,15 +32,22 @@ import (
 // ControlChannelBrokerClient implements RuntimeBrokerClient by tunneling requests
 // through the control channel WebSocket connection.
 type ControlChannelBrokerClient struct {
-	manager *ControlChannelManager
+	manager controlChannelTunnel
 	debug   bool
+	signer  brokerRequestSigner
+}
+
+type controlChannelTunnel interface {
+	IsConnected(brokerID string) bool
+	TunnelRequest(ctx context.Context, brokerID string, req *wsprotocol.RequestEnvelope) (*wsprotocol.ResponseEnvelope, error)
 }
 
 // NewControlChannelBrokerClient creates a new control channel broker client.
-func NewControlChannelBrokerClient(manager *ControlChannelManager, debug bool) *ControlChannelBrokerClient {
+func NewControlChannelBrokerClient(manager *ControlChannelManager, signer brokerRequestSigner, debug bool) *ControlChannelBrokerClient {
 	return &ControlChannelBrokerClient{
 		manager: manager,
 		debug:   debug,
+		signer:  signer,
 	}
 }
 
@@ -262,8 +271,9 @@ func (c *ControlChannelBrokerClient) doRequestRaw(ctx context.Context, brokerID,
 		return nil, fmt.Errorf("broker %s not connected via control channel", brokerID)
 	}
 
-	headers := map[string]string{
-		"Content-Type": "application/json",
+	headers, err := c.buildRequestHeaders(ctx, brokerID, method, path, query, body)
+	if err != nil {
+		return nil, err
 	}
 
 	req := wsprotocol.NewRequestEnvelope(uuid.New().String(), method, path, query, headers, body)
@@ -285,8 +295,9 @@ func (c *ControlChannelBrokerClient) doRequest(ctx context.Context, brokerID, me
 		return nil, fmt.Errorf("broker %s not connected via control channel", brokerID)
 	}
 
-	headers := map[string]string{
-		"Content-Type": "application/json",
+	headers, err := c.buildRequestHeaders(ctx, brokerID, method, path, query, body)
+	if err != nil {
+		return nil, err
 	}
 
 	req := wsprotocol.NewRequestEnvelope(uuid.New().String(), method, path, query, headers, body)
@@ -302,6 +313,42 @@ func (c *ControlChannelBrokerClient) doRequest(ctx context.Context, brokerID, me
 	return resp, nil
 }
 
+func (c *ControlChannelBrokerClient) buildRequestHeaders(ctx context.Context, brokerID, method, path, query string, body []byte) (map[string]string, error) {
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+
+	if c.signer == nil {
+		return headers, nil
+	}
+
+	tunnelURL := "http://runtime-broker" + path
+	if query != "" {
+		tunnelURL += "?" + query
+	}
+
+	var requestBody io.Reader
+	if len(body) > 0 {
+		requestBody = bytes.NewReader(body)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, method, tunnelURL, requestBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build control channel request for signing: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	if err := c.signer.Sign(ctx, httpReq, brokerID); err != nil {
+		return nil, fmt.Errorf("failed to sign control channel request: %w", err)
+	}
+
+	for key := range httpReq.Header {
+		headers[key] = httpReq.Header.Get(key)
+	}
+
+	return headers, nil
+}
+
 // HybridBrokerClient tries control channel first, falls back to HTTP.
 type HybridBrokerClient struct {
 	controlChannel *ControlChannelBrokerClient
@@ -310,9 +357,9 @@ type HybridBrokerClient struct {
 }
 
 // NewHybridBrokerClient creates a hybrid client that prefers control channel.
-func NewHybridBrokerClient(manager *ControlChannelManager, httpClient RuntimeBrokerClient, debug bool) *HybridBrokerClient {
+func NewHybridBrokerClient(manager *ControlChannelManager, httpClient RuntimeBrokerClient, signer brokerRequestSigner, debug bool) *HybridBrokerClient {
 	return &HybridBrokerClient{
-		controlChannel: NewControlChannelBrokerClient(manager, debug),
+		controlChannel: NewControlChannelBrokerClient(manager, signer, debug),
 		httpClient:     httpClient,
 		debug:          debug,
 	}
