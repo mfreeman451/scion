@@ -771,7 +771,8 @@ func runBrokerStart(cmd *cobra.Command, args []string) error {
 	// Foreground mode - just run the server command directly
 	if brokerStartForeground {
 		// Build args for server start (just the flags, no command names)
-		serverArgs := []string{"--enable-runtime-broker"}
+		// Use --production to avoid workstation defaults (we only want the broker)
+		serverArgs := []string{"--production", "--enable-runtime-broker"}
 		if brokerStartPort != DefaultBrokerPort {
 			serverArgs = append(serverArgs, fmt.Sprintf("--runtime-broker-port=%d", brokerStartPort))
 		}
@@ -809,7 +810,8 @@ func runBrokerStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build args for the daemon process
-	daemonArgs := []string{"server", "start", "--enable-runtime-broker"}
+	// Use --production to avoid workstation defaults (we only want the broker)
+	daemonArgs := []string{"server", "start", "--production", "--enable-runtime-broker"}
 	if brokerStartPort != DefaultBrokerPort {
 		daemonArgs = append(daemonArgs, fmt.Sprintf("--runtime-broker-port=%d", brokerStartPort))
 	}
@@ -916,7 +918,8 @@ func runBrokerRestart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build args for the daemon process
-	daemonArgs := []string{"server", "start", "--enable-runtime-broker"}
+	// Use --production to avoid workstation defaults (we only want the broker)
+	daemonArgs := []string{"server", "start", "--production", "--enable-runtime-broker"}
 	if brokerRestartPort != DefaultBrokerPort {
 		daemonArgs = append(daemonArgs, fmt.Sprintf("--runtime-broker-port=%d", brokerRestartPort))
 	}

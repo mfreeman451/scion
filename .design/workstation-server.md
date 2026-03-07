@@ -283,11 +283,14 @@ This would probe the health endpoints (`/healthz`) on the known ports, and check
 5. ✅ **Add `scion server status`**: Daemon status + component health checks (probes Hub, Broker, Web endpoints).
 6. ✅ **Invert default**: `scion server start` runs as daemon unless `--foreground`.
 
-### Phase 2: Default Workstation Mode (cmd/server.go)
+### Phase 2: Default Workstation Mode (cmd/server.go) ✅ COMPLETE
 
-1. **Add `--production` flag** that opts into explicit-flag mode.
-2. **Set workstation defaults** when `--production` is not present (all components enabled, dev-auth, auto-provide, loopback binding, local backends).
-3. **Update help text and examples** to feature the zero-flag workstation experience prominently.
+1. ✅ **Add `--production` flag** that opts into explicit-flag mode.
+2. ✅ **Set workstation defaults** when `--production` is not present (all components enabled, dev-auth, auto-provide, loopback binding, local backends).
+3. ✅ **Update help text and examples** to feature the zero-flag workstation experience prominently.
+4. ✅ **Update `scion broker` delegation** to pass `--production` to avoid triggering workstation defaults.
+5. ✅ **Disable GCP logging** in workstation mode unless explicitly enabled via `SCION_LOG_GCP`.
+6. ✅ **Force local storage/secrets backends** in workstation mode unless explicitly overridden.
 
 ### Phase 3: Configuration Support (pkg/config)
 

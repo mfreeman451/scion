@@ -93,6 +93,9 @@ var (
 
 	// Server daemon flags
 	serverStartForeground bool
+
+	// Production mode flag
+	productionMode bool
 )
 
 const (
@@ -106,28 +109,42 @@ var serverCmd = &cobra.Command{
 	Short: "Manage the Scion server components",
 	Long: `Commands for managing the Scion server components.
 
+By default, the server runs in workstation mode: all components are enabled,
+dev-auth is on, and the server binds to 127.0.0.1 (loopback only). This is
+the zero-configuration path for single-user, local development.
+
+For production deployments, use --production to require explicit component
+selection and bind to 0.0.0.0 by default.
+
 The server provides:
 - Hub API: Central registry for groves, agents, and templates (standalone: port 9810)
 - Runtime Broker API: Agent lifecycle management on compute nodes (port 9800)
-- Web Frontend: Browser-based UI (--enable-web, port 8080)
+- Web Frontend: Browser-based UI (port 8080)
 
-In combined mode (--enable-hub --enable-web), the Hub API is mounted on the
-web server's port (default 8080) and the standalone Hub listener is not started.`,
+In combined mode, the Hub API is mounted on the web server's port (default 8080)
+and the standalone Hub listener is not started.`,
 }
 
 // serverStartCmd represents the server start command
 var serverStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the Scion server components",
-	Long: `Start one or more Scion server components.
+	Long: `Start the Scion server.
 
-By default, the server starts as a background daemon. Use --foreground
-to run in the current terminal session.
+By default, the server runs in workstation mode: all components (Hub, Broker,
+Web) are enabled, dev-auth is on, auto-provide is enabled, and the server
+binds to 127.0.0.1 (loopback only). Just run 'scion server start' to get a
+fully functional local server with no flags needed.
 
-Server Components:
-- Hub API (--enable-hub): Central coordination for groves, agents, templates
-- Runtime Broker API (--enable-runtime-broker): Agent lifecycle on this compute node
-- Web Frontend (--enable-web): Browser-based UI for managing agents and groves
+The server starts as a background daemon by default. Use --foreground to run
+in the current terminal session (useful for systemd/launchd integration).
+
+For production deployments, use --production to switch to explicit mode where
+no components are enabled by default and the server binds to 0.0.0.0.
+
+Explicit flags always override workstation defaults. For example,
+'scion server start --host 0.0.0.0' uses workstation mode but binds to
+all interfaces.
 
 Configuration can be provided via:
 - Config file (--config flag or ~/.scion/server.yaml)
@@ -135,20 +152,20 @@ Configuration can be provided via:
 - Command-line flags
 
 Examples:
-  # Start server as daemon (background)
-  scion server start --enable-hub --enable-runtime-broker --enable-web
+  # Start in workstation mode (all components, dev-auth, loopback)
+  scion server start
 
-  # Start server in foreground
-  scion server start --foreground --enable-hub --enable-runtime-broker
+  # Start in foreground (for systemd/launchd)
+  scion server start --foreground
 
-  # Start Hub API only
-  scion server start --enable-hub
+  # Workstation mode but expose on all interfaces
+  scion server start --host 0.0.0.0
 
-  # Start Runtime Broker API only
-  scion server start --enable-runtime-broker
+  # Production mode with explicit components
+  scion server start --production --enable-hub --enable-runtime-broker --enable-web
 
-  # Start Hub with Web Frontend
-  scion server start --enable-hub --enable-web`,
+  # Production mode, Hub with Web Frontend only
+  scion server start --production --enable-hub --enable-web`,
 	RunE: runServerStartOrDaemon,
 }
 
@@ -268,6 +285,30 @@ func runServerStartOrDaemon(cmd *cobra.Command, args []string) error {
 			pid, daemon.GetLogPathComponent(serverDaemonComponent, globalDir))
 	}
 
+	// Apply workstation defaults when not in production mode.
+	// Workstation mode enables all components, dev-auth, auto-provide,
+	// and binds to loopback (127.0.0.1) for single-user security.
+	if !productionMode {
+		if !cmd.Flags().Changed("enable-hub") {
+			enableHub = true
+		}
+		if !cmd.Flags().Changed("enable-runtime-broker") {
+			enableRuntimeBroker = true
+		}
+		if !cmd.Flags().Changed("enable-web") {
+			enableWeb = true
+		}
+		if !cmd.Flags().Changed("dev-auth") {
+			enableDevAuth = true
+		}
+		if !cmd.Flags().Changed("auto-provide") {
+			serverAutoProvide = true
+		}
+		if !cmd.Flags().Changed("host") {
+			hubHost = "127.0.0.1"
+		}
+	}
+
 	// Check if at least one component is enabled
 	if !enableHub && !enableRuntimeBroker && !enableWeb {
 		return fmt.Errorf("no server components enabled; use --enable-hub, --enable-runtime-broker, or --enable-web")
@@ -281,6 +322,9 @@ func runServerStartOrDaemon(cmd *cobra.Command, args []string) error {
 
 	// Build args for the daemon process — pass through all flags
 	daemonArgs := []string{"server", "start", "--foreground"}
+	if productionMode {
+		daemonArgs = append(daemonArgs, "--production")
+	}
 	if enableHub {
 		daemonArgs = append(daemonArgs, "--enable-hub")
 	}
@@ -299,9 +343,7 @@ func runServerStartOrDaemon(cmd *cobra.Command, args []string) error {
 	if serverAutoProvide {
 		daemonArgs = append(daemonArgs, "--auto-provide")
 	}
-	if cmd.Flags().Changed("host") {
-		daemonArgs = append(daemonArgs, fmt.Sprintf("--host=%s", hubHost))
-	}
+	daemonArgs = append(daemonArgs, fmt.Sprintf("--host=%s", hubHost))
 	if cmd.Flags().Changed("port") {
 		daemonArgs = append(daemonArgs, fmt.Sprintf("--port=%d", hubPort))
 	}
@@ -328,7 +370,11 @@ func runServerStartOrDaemon(cmd *cobra.Command, args []string) error {
 	}
 
 	// Start daemon
-	fmt.Println("Starting server as daemon...")
+	mode := "workstation"
+	if productionMode {
+		mode = "production"
+	}
+	fmt.Printf("Starting server as daemon (%s mode)...\n", mode)
 	if err := daemon.StartComponent(serverDaemonComponent, executable, daemonArgs, globalDir); err != nil {
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
@@ -555,6 +601,10 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 		// Auto-enable GCP logging on Cloud Run
 		useGCP = true
 	}
+	// Disable GCP logging in workstation mode unless explicitly enabled
+	if !productionMode && os.Getenv("SCION_LOG_GCP") == "" {
+		useGCP = false
+	}
 
 	// Determine component name based on flags
 	component := "scion-server"
@@ -600,6 +650,37 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
+	// Apply workstation defaults when not in production mode.
+	// These are applied before explicit flag overrides so flags always win.
+	if !productionMode {
+		if !cmd.Flags().Changed("enable-hub") {
+			enableHub = true
+		}
+		if !cmd.Flags().Changed("enable-runtime-broker") {
+			enableRuntimeBroker = true
+			cfg.RuntimeBroker.Enabled = true
+		}
+		if !cmd.Flags().Changed("enable-web") {
+			enableWeb = true
+		}
+		if !cmd.Flags().Changed("dev-auth") {
+			enableDevAuth = true
+			cfg.Auth.Enabled = true
+		}
+		if !cmd.Flags().Changed("auto-provide") {
+			serverAutoProvide = true
+		}
+		if !cmd.Flags().Changed("host") {
+			cfg.Hub.Host = "127.0.0.1"
+			cfg.RuntimeBroker.Host = "127.0.0.1"
+		}
+		// Force local backends unless explicitly overridden
+		if !cmd.Flags().Changed("storage-bucket") {
+			cfg.Storage.Provider = "local"
+		}
+		cfg.Secrets.Backend = "local"
+	}
+
 	// Override with command-line flags if specified
 	if cmd.Flags().Changed("port") {
 		cfg.Hub.Port = hubPort
@@ -632,8 +713,8 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 		cfg.Storage.LocalPath = storageDir
 	}
 
-	// Fallback to legacy environment variable if not set elsewhere
-	if cfg.Storage.Bucket == "" {
+	// Fallback to legacy environment variable if not set elsewhere (production mode only)
+	if cfg.Storage.Bucket == "" && productionMode {
 		if val := os.Getenv("SCION_HUB_STORAGE_BUCKET"); val != "" {
 			cfg.Storage.Bucket = val
 			if cfg.Storage.Provider == "local" || cfg.Storage.Provider == "" {
@@ -739,6 +820,13 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 			}
 			return fmt.Errorf("Web Frontend port %d is already in use by another process", webPort)
 		}
+	}
+
+	// Log server mode
+	if productionMode {
+		log.Println("Server mode: production")
+	} else {
+		log.Printf("Server mode: workstation (binding to %s)", cfg.Hub.Host)
 	}
 
 	// Log debug mode status
@@ -1797,6 +1885,7 @@ func init() {
 
 	// Server start flags
 	serverStartCmd.Flags().BoolVar(&serverStartForeground, "foreground", false, "Run in foreground instead of as daemon")
+	serverStartCmd.Flags().BoolVar(&productionMode, "production", false, "Production mode: no components enabled by default, binds to 0.0.0.0")
 	serverStartCmd.Flags().StringVarP(&serverConfigPath, "config", "c", "", "Path to server configuration file")
 
 	// Hub API flags
