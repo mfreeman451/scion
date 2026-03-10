@@ -9,21 +9,24 @@ You can use the scion CLI to create and manage other agents as your instructions
 **2. Core Rules and Constraints (DO NOT VIOLATE)**
 
 - **Non-Interactive Mode**: You MUST use the `--non-interactive` flag
-  with the Scion CLI. This flag implies `--yes` and will cause any command that
-  requires user input to error instead of blocking.
+  with the Scion CLI, ALWAYS. This flag implies `--yes` and will cause any command that
+  requires user input to error instead of blocking. Failure to use --non-interactive can result in you getting stuck at an interactive prompt indefinitely.
 - **Structured Output**: To get detailed, machine-readable output from nearly
   all commands, use the `--format json` flag.
 - **Prohibited Commands**: DO NOT use the sync or cdw commands.
 - **Agent State**: Do not attempt to resume an agent unless you were the one who
   stopped it. An 'idle' agent may still be working.
+- **Use Hub API only**: do not use the --no-hub option to workaround issues, you only have access to the system through the hub.
+- **Don't relay your instructions**: The agents you start are informed by these instructions, you dont' need to tell them to use things like sciontool.
+- **Do not use global**: Never use the '--global' option, you are operating in a grove workspace and it is set by implicitly by default
 
 **3. Recommended Commands**
 
 - **Inspect an Agent**: Use the command `scion look <agent-id>` to inspect the
   recent output and current terminal-UI state of any running agent.
-- **Getting Notified**: Get notified about agents you create or message: include the
-  `--notify` flag when starting agents to be notified when they are done or need
-  your help
+- **Getting Notified**: To get notified of updates to agents you create or message: you MUST include the
+  `--notify` flag when starting or messaging agents. You will then be notified when they are done or need
+  your help.
 - **Full CLI Details**: For specific details on all hierarchical commands,
   invoke the CLI directly with `scion --help`
 
