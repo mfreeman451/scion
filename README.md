@@ -4,7 +4,7 @@ _sci·on /ˈsīən/ noun 1. a young shoot or twig of a plant, especially one cut
 
 Scion is an experimental multi-agent orchestration testbed designed to manage concurrent LLM-based agents running in containers across your local machine and remote clusters. It enables developers to run groups of specialized agents with isolated identities, credentials, and workspaces, allowing for a dynamic and evolving graph of parallel execution of tasks such as research, coding, auditing, and testing.
 
-Scion takes a "less is more" approach to allowing modern powerful models to determine the execution of orchestration patterns by leveraging the progressive skill approach of dynamically loading the usage help text of the `scion` cli tool to manage other agents. This provides a system to rapidly experiment with different orchestration patterns and approaches through natural language prompting. See more in [philosophy](docs-site/src/content/docs/philosophy.md)
+Scion takes a "less is more" approach to allowing modern powerful models to determine the execution of orchestration patterns by leveraging the progressive skill approach of dynamically loading the usage help text of the `scion` cli tool to manage other agents. This provides a system to rapidly experiment with different orchestration patterns and approaches through natural language prompting. See more in [philosophy](https://googlecloudplatform.github.io/scion/philosophy/)
 
 **NOTE** Currently this project is early and experimental. Most of the concepts are settled in, but many features may not be fully implemented, anything might break or change and the future is not set. Local use is relatively stable, Hub based workflows are ~80% verified, Kubernetes runtime support and remote-git Groves are early and have rough edges.
 
@@ -14,27 +14,27 @@ Scion takes a "less is more" approach to allowing modern powerful models to dete
 - **Isolation**: Each agent runs in its own container with strict separation of credentials, configuration, and environment. Scion uses `git worktree` to provide each agent with a dedicated workspace, preventing merge conflicts and ensuring clean separation of concerns.
 - **Context Management**: Each agent has a dedicated context window, and optionally its own system instruction.
 - **Runtimes**: Manage multiple execution environments (e.g., Local, Docker, Kubernetes) via named profiles. Distributed across local workstion, remote VMs, and container clusters.
-- **Specialization**: Agents can be customized via [Templates](docs-site/src/content/docs/advanced-local/templates.md) (e.g., "Security Auditor", "QA Tester") to perform specific roles.
+- **Specialization**: Agents can be customized via [Templates](https://googlecloudplatform.github.io/scion/advanced-local/templates/) (e.g., "Security Auditor", "QA Tester") to perform specific roles.
 - **Interactivity**: Agents run in `tmux` sessions by default, allowing for "detached" background operation, enqueuing messages to running agents, and "attaching" for human-in-the-loop interaction. Attach to running agents across automatically established network tunnels for secure remote control.
 - **Harness Agnostic**: Works with Gemini CLI, Claude Code, OpenCode, and Codex. Easily adaptable to any harness which can run in a container.
 - **Observability**: Supports normalized OTEL telemetry across harnesses for logging and metrics allowing easy aggregation across agent swarms.
 
 ## Documentation
 
-Visit our **[Documentation Site](docs-site/src/content/docs/)** for comprehensive guides and reference.
+Visit our **[Documentation Site](https://googlecloudplatform.github.io/scion/)** for comprehensive guides and reference.
 
-- **[Overview](docs-site/src/content/docs/overview.md)**: Introduction to Scion.
-- **[Installation](docs-site/src/content/docs/getting-started/install.md)**: How to get Scion up and running.
-- **[Concepts](docs-site/src/content/docs/concepts.md)**: Understanding Agents, Groves, Harnesses, and Runtimes.
-- **[CLI Reference](docs-site/src/content/docs/reference/cli.md)**: Comprehensive guide to all Scion commands.
+- **[Overview](https://googlecloudplatform.github.io/scion/overview/)**: Introduction to Scion.
+- **[Installation](https://googlecloudplatform.github.io/scion/getting-started/install/)**: How to get Scion up and running.
+- **[Concepts](https://googlecloudplatform.github.io/scion/concepts/)**: Understanding Agents, Groves, Harnesses, and Runtimes.
+- **[CLI Reference](https://googlecloudplatform.github.io/scion/reference/cli/)**: Comprehensive guide to all Scion commands.
 - **Guides**:
-    - [Using Templates](docs-site/src/content/docs/advanced-local/templates.md)
-    - [Using Tmux](docs-site/src/content/docs/advanced-local/tmux.md)
-    - [Kubernetes Runtime](docs-site/src/content/docs/hub-admin/kubernetes.md)
+    - [Using Templates](https://googlecloudplatform.github.io/scion/advanced-local/templates/)
+    - [Using Tmux](https://googlecloudplatform.github.io/scion/advanced-local/tmux/)
+    - [Kubernetes Runtime](https://googlecloudplatform.github.io/scion/hub-admin/kubernetes/)
 
 ## Installation
 
-See the **[Installation Guide](docs-site/src/content/docs/getting-started/install.md)** for detailed instructions.
+See the **[Installation Guide](https://googlecloudplatform.github.io/scion/getting-started/install/)** for detailed instructions.
 
 Quick start from source:
 ```bash
@@ -90,7 +90,7 @@ Scion settings are managed in `settings.json` files, following a precedence orde
 
 Profiles allow you to switch runtimes and configurations easily (e.g. `scion --profile remote start ...`).
 
-Templates serve as blueprints and can be managed via the `templates` subcommand. See the [Templates Guide](docs-site/src/content/docs/advanced-local/templates.md) for more details.
+Templates serve as blueprints and can be managed via the `templates` subcommand. See the [Templates Guide](https://googlecloudplatform.github.io/scion/advanced-local/templates/) for more details.
 
 ## Disclaimers
 
