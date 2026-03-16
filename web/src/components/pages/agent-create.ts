@@ -310,6 +310,11 @@ export class ScionPageAgentCreate extends LitElement {
     void this.loadFormData();
   }
 
+  /** The currently selected grove */
+  private get selectedGrove(): Grove | undefined {
+    return this.groves.find((g) => g.id === this.groveId);
+  }
+
   /** The grove matching the URL-provided groveId, used for back-navigation */
   private get sourceGrove(): Grove | undefined {
     if (!this.groveFromUrl) return undefined;
@@ -770,18 +775,22 @@ export class ScionPageAgentCreate extends LitElement {
             ></sl-input>
           </div>
 
-          <div class="form-field">
-            <label for="branch">Branch</label>
-            <sl-input
-              id="branch"
-              placeholder="defaults to agent name"
-              .value=${this.branch}
-              @sl-input=${(e: Event) => {
-                this.branch = (e.target as HTMLElement & { value: string }).value;
-              }}
-            ></sl-input>
-            <div class="hint">Git branch for this agent's worktree.</div>
-          </div>
+          ${this.selectedGrove?.gitRemote
+            ? html`
+                <div class="form-field">
+                  <label for="branch">Branch</label>
+                  <sl-input
+                    id="branch"
+                    placeholder="defaults to agent name"
+                    .value=${this.branch}
+                    @sl-input=${(e: Event) => {
+                      this.branch = (e.target as HTMLElement & { value: string }).value;
+                    }}
+                  ></sl-input>
+                  <div class="hint">Git branch for this agent's workspace.</div>
+                </div>
+              `
+            : ''}
 
           <div class="form-field">
             <label for="grove">Grove</label>
@@ -793,6 +802,10 @@ export class ScionPageAgentCreate extends LitElement {
                 this.groveId = (e.target as HTMLElement & { value: string }).value;
                 this.selectBrokerForGrove();
                 this.selectTemplateForGrove();
+                // Clear branch if new grove is not git-based
+                if (!this.selectedGrove?.gitRemote) {
+                  this.branch = '';
+                }
               }}
               required
             >
