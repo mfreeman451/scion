@@ -26,8 +26,10 @@ This release significantly hardens the agent workspace provisioning process for 
 
 This release introduces the foundational infrastructure for the Scion plugin system, adds comprehensive support for syncing grove-level templates, and unifies all Grove IDs to a standard UUID format.
 
-### ⚠️ BREAKING CHANGES
+:::danger[BREAKING CHANGES]
 * **Grove ID Format Unification:** All Grove IDs have been standardized to a unified UUID format. Git-backed groves now use a deterministic UUID v5 (based on the namespace and normalized URL) instead of a 16-character hex hash, while non-git and hub-native groves continue using UUID v4. Existing git-backed groves may need to be re-linked, and any integrations relying on the old hex format must be updated (commit e896693).
+
+:::
 
 ### 🚀 Features
 * **Plugin System Infrastructure:** Introduced the core architecture for a new Scion plugin system using `hashicorp/go-plugin`, complete with reference implementations for message broker and agent harness plugins (consolidated from commits 6c543d0, b1a5ae1, 22991ec).
@@ -42,8 +44,10 @@ This release introduces the foundational infrastructure for the Scion plugin sys
 
 This release focuses on improving agent specialization with harness skills, resolving critical routing and identification issues in multi-hub and linked git environments, and adding a new satellite service for documentation agents.
 
-### ⚠️ BREAKING CHANGES
+:::danger[BREAKING CHANGES]
 * **Linked Git Grove IDs:** Linked groves backed by a git remote now use deterministic 16-character hex hash IDs (e.g., generated via `HashGroveID()`) instead of the raw, normalized git URL. This resolves severe web routing and API path parsing issues caused by slashes in the URL. If you had existing linked groves, they may need to be re-linked, and any scripts relying on the raw git URL as the Grove ID will need to be updated (commit 05e0c7a).
+
+:::
 
 ### 🚀 Features
 * **Harness Skills for Templates:** Implemented robust support for harness skills within agent templates. Skills defined in `harness-configs` and templates are now automatically merged and mounted into the appropriate harness-specific directory (e.g., `.claude/skills`, `.gemini/skills`) during agent provisioning (consolidated from commits efefc44, 2a086ac, 5b54c66).
@@ -128,8 +132,10 @@ This release focuses on streamlining system administration and enhancing visibil
 
 This release marks a significant milestone with the official transition of the project to the Google Cloud Platform organization, including a full module rename. It also introduces critical enhancements for agent autonomy with the enablement of the Scion CLI inside agent containers, alongside major improvements to administrative observability and real-time event reliability.
 
-### ⚠️ BREAKING CHANGES
+:::danger[BREAKING CHANGES]
 * **Project Rebranding & Module Rename:** The Go module has been renamed from `github.com/ptone/scion-agent` to `github.com/GoogleCloudPlatform/scion`. All internal package imports and external references have been updated to reflect the transition to the Google Cloud Platform organization.
+
+:::
 
 ### 🚀 Features
 * **Autonomous In-Container CLI:** Enabled the Scion CLI within agent containers, providing agents with the ability to interact with the Hub API natively using their provisioned authenticated service context.
@@ -158,8 +164,10 @@ This release marks a significant milestone with the official transition of the p
 
 This release delivers a complete maturation of the Kubernetes runtime, introduces significant architectural enhancements for agent isolation and security, and drastically improves Web UI performance with optimistic updates and connection pooling.
 
-### ⚠️ BREAKING CHANGES
+:::danger[BREAKING CHANGES]
 * **Kubernetes Mutagen Sync Removal:** Mutagen synchronization support has been entirely removed from the Kubernetes runtime in favor of native implementations as part of the Stage 1 Parity rollout.
+
+:::
 
 ### 🚀 Features
 * **Kubernetes Runtime Maturation (Stages 1-3):** Successfully implemented Parity, Production Hardening, and Launch Readiness for the Kubernetes runtime, establishing it as a fully-supported, robust platform for agent execution.
@@ -204,8 +212,10 @@ This release marks a major leap in agent observability with the launch of the Cl
 
 This release introduces Just-In-Time (JIT) agent configuration, an advanced agent creation interface, and native GCP telemetry integration, while centralizing profile management at the global level.
 
-### ⚠️ BREAKING CHANGES
+:::danger[BREAKING CHANGES]
 * **Global Profile Management:** Runtime `profiles` and `runtimes` are no longer supported in grove-level `settings.yaml`. These must now be managed exclusively at the global/broker level (`~/.scion/settings.yaml`). Existing grove-specific profiles must be migrated to the global configuration.
+
+:::
 
 ### 🚀 Features
 * **Just-In-Time (JIT) Agent Configuration:** Completed Phases 1 & 2 of the inline agent configuration refactor. Agents now support dynamic, late-bound configuration overrides at runtime, enabling more flexible and adaptive agent behavior.
@@ -225,9 +235,11 @@ This release introduces Just-In-Time (JIT) agent configuration, an advanced agen
 
 This release introduces a major overhaul of the agent authentication pipeline, automated token refresh, and critical stability fixes for container removal and terminal reliability.
 
-### ⚠️ BREAKING CHANGES
+:::danger[BREAKING CHANGES]
 * **Credential Key Migration:** The internal secret key `OAUTH_CREDS` has been renamed to `GEMINI_OAUTH_CREDS`. Users must migrate existing secrets to this new key to maintain Gemini harness functionality.
 * **Harness Auth Refactor:** Legacy harness-specific authentication methods have been retired in favor of a unified `ResolvedAuth` pipeline. Custom harness implementations or manual environment overrides may require updates to align with the new late-binding logic.
+
+:::
 
 ### 🚀 Features
 * **Unified Harness Authentication:** Completed a multi-phase refactor of the agent authentication pipeline. Agents now support a variety of resolved auth types (API Key, Vertex AI, ADC, OAuth) with late-binding overrides available via the CLI (`--harness-auth`) and the agent creation form.
@@ -243,8 +255,10 @@ This release introduces a major overhaul of the agent authentication pipeline, a
 
 This period focuses on the foundational implementation of the unified harness authentication pipeline and enhances infrastructure visibility within the Web UI.
 
-### ⚠️ BREAKING CHANGES
+:::danger[BREAKING CHANGES]
 * **Harness Authentication Pipeline:** The implementation of the unified `ResolvedAuth` model (Phases 1-7) replaces legacy harness-specific authentication methods. While finalized in the Mar 5 release, the core architectural shift and retirement of legacy methods occurred in this period.
+
+:::
 
 ### 🚀 Features
 * **Unified Harness Authentication:** Completed a multi-phase refactor (Phases 1-7) of the agent authentication pipeline. Introduced centralized `AuthConfig` gathering, per-harness `ResolveAuth` logic, and a unified `ValidateAuth` phase, enabling more robust credential resolution across all harnesses.
@@ -312,9 +326,11 @@ This release introduces strict runtime enforcement for agent resource limits and
 
 This release marks a major milestone with the completion of the canonical agent state refactor and the launch of the Hub scheduler system, alongside significant enhancements to real-time observability and broker security.
 
-### ⚠️ BREAKING CHANGES
+:::danger[BREAKING CHANGES]
 * **Unified State Model:** The legacy `Status` and `SessionStatus` fields have been fully retired in favor of a canonical, layered agent state model. Downstream consumers of the Hub API or `sciontool` status outputs must update to the new schema.
 * **Notification Triggers:** In alignment with the state refactor, notification `TriggerStatuses` have been renamed to `TriggerActivities`.
+
+:::
 
 ### 🚀 Features
 * **Canonical Agent State Refactor:** Completed a comprehensive, multi-phase overhaul of the agent state system across the Hub, Store, Runtime Broker, CLI, and Web UI. This ensures a consistent, high-fidelity representation of agent activity throughout the entire lifecycle.
@@ -389,8 +405,10 @@ This release focuses on hardening the agent provisioning pipeline, streamlining 
 
 This release introduces a robust policy-based authorization system, a comprehensive agent notification framework, and significant enhancements to hub-native groves and schema validation.
 
-### ⚠️ BREAKING CHANGES
+:::danger[BREAKING CHANGES]
 * **Policy-Based Authorization:** Strictly enforced authorization for agent operations. Agent creation now requires grove membership, while interaction (PTY, messaging) and deletion are restricted to the agent's owner (creator) or system administrators.
+
+:::
 
 ### 🚀 Features
 * **Agent Notifications System:** Launched a multi-phase notification framework enabling real-time subscriptions to agent status events. This includes a new notification dispatcher, Hub API endpoints, and a `--notify` flag in the CLI for status tracking.
@@ -463,9 +481,11 @@ This period heavily focused on implementing the end-to-end "env-gather" flow to 
 
 This period focused heavily on unifying the Hub API and Web Server architectures, refactoring the agent status model, and enhancing the web frontend experience with new routing and pages.
 
-### ⚠️ BREAKING CHANGES
+:::danger[BREAKING CHANGES]
 * **Status Model:** Consolidated the `SessionStatus` field into the primary `Status` field across the codebase (API, Database, UI). The `WAITING_FOR_INPUT` and `COMPLETED` states are now treated as "sticky" statuses.
 * **Server Architecture:** Combined the Hub API and Web server to serve on a single port (`8080`) when both are enabled. API traffic is now routed to `/api/v1/`, resolving CORS issues and simplifying local deployment.
+
+:::
 
 ### 🚀 Features
 * **Web Frontend Enhancements:** Added a new Brokers list page, implemented full client-side routing for the Vite dev server, and unified OAuth provider detection via a new `/auth/providers` endpoint.
@@ -483,9 +503,11 @@ This period focused heavily on unifying the Hub API and Web Server architectures
 
 This period represented a major architectural shift, consolidating the web server into a single Go binary, removing dependencies like NATS and Koa, and introducing hub-first remote workspaces via Git.
 
-### ⚠️ BREAKING CHANGES
+:::danger[BREAKING CHANGES]
 * **Secrets Management:** The system now strictly requires a configured production secret backend (e.g., `gcpsm`) for any secret Set operations across user, grove, and runtime broker scopes. Plaintext fallbacks have been removed. Read, list, and delete operations remain functional locally to support data migration.
 * **Server Architecture:** The Node.js Koa server and NATS message broker dependencies have been completely retired. The Scion Hub now natively handles web frontend serving, SPA routing, and Server-Sent Events (SSE) via a consolidated Go binary.
+
+:::
 
 ### 🚀 Features
 * **Hub-First Git Workspaces:** Implemented end-to-end support for creating remote workspaces directly from Git URLs. This integration enables git clone mode across `sciontool init` and the runtime broker pipeline.
