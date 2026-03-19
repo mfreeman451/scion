@@ -457,6 +457,23 @@ func (s *Server) createAgentInGrove(
 		}
 	}
 
+	// Validate GCP passthrough mode: only the broker owner (or admin) may use passthrough,
+	// because it exposes the broker's own GCP identity to the agent container.
+	if req.GCPIdentity != nil && req.GCPIdentity.MetadataMode == store.GCPMetadataModePassthrough && runtimeBrokerID != "" {
+		if userIdent := GetUserIdentityFromContext(ctx); userIdent != nil {
+			broker, err := s.store.GetRuntimeBroker(ctx, runtimeBrokerID)
+			if err != nil {
+				writeErrorFromErr(w, err, "")
+				return
+			}
+			if userIdent.Role() != "admin" && broker.CreatedBy != userIdent.ID() {
+				writeError(w, http.StatusForbidden, ErrCodeForbidden,
+					"GCP identity passthrough requires broker ownership. Only the broker owner can expose the broker's GCP identity to agents.", nil)
+				return
+			}
+		}
+	}
+
 	// Validate GCP identity SA assignment: verify the SA exists, belongs to this grove, and is verified.
 	var resolvedGCPSA *store.GCPServiceAccount
 	if req.GCPIdentity != nil && req.GCPIdentity.MetadataMode == store.GCPMetadataModeAssign {

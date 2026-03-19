@@ -3480,3 +3480,212 @@ func TestCreateAgent_GCPIdentityPassthroughWithSAID(t *testing.T) {
 	})
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
+
+func TestCreateAgent_GCPPassthrough_BrokerOwnerAllowed(t *testing.T) {
+	disp := &createAgentDispatcher{createPhase: string(state.PhaseRunning)}
+	srv, s, _ := setupCreateAgentServer(t, disp)
+	ctx := context.Background()
+
+	// Create a user who owns the broker
+	owner := &store.User{
+		ID:          "user-broker-owner",
+		Email:       "owner@test.com",
+		DisplayName: "Broker Owner",
+		Role:        store.UserRoleMember,
+		Status:      "active",
+		Created:     time.Now(),
+	}
+	require.NoError(t, s.CreateUser(ctx, owner))
+	ensureHubMembership(ctx, s, owner.ID)
+
+	// Create a grove owned by the broker owner with proper policies
+	grove := &store.Grove{
+		ID:        "grove-pt-owner",
+		Name:      "Passthrough Owner Grove",
+		Slug:      "passthrough-owner-grove",
+		OwnerID:   owner.ID,
+		CreatedBy: owner.ID,
+		Created:   time.Now(),
+		Updated:   time.Now(),
+	}
+	require.NoError(t, s.CreateGrove(ctx, grove))
+	srv.createGroveMembersGroupAndPolicy(ctx, grove)
+
+	// Create a broker owned by the same user
+	broker := &store.RuntimeBroker{
+		ID:        "broker-pt-owner",
+		Name:      "Owner Broker",
+		Slug:      "owner-broker",
+		Status:    store.BrokerStatusOnline,
+		CreatedBy: owner.ID,
+	}
+	require.NoError(t, s.CreateRuntimeBroker(ctx, broker))
+	require.NoError(t, s.AddGroveProvider(ctx, &store.GroveProvider{
+		GroveID:    grove.ID,
+		BrokerID:   broker.ID,
+		BrokerName: broker.Name,
+		Status:     store.BrokerStatusOnline,
+	}))
+	grove.DefaultRuntimeBrokerID = broker.ID
+	require.NoError(t, s.UpdateGrove(ctx, grove))
+
+	// Broker owner should be allowed to use passthrough
+	rec := doRequestAsUser(t, srv, owner, http.MethodPost, "/api/v1/agents", CreateAgentRequest{
+		Name:    "pt-owner-agent",
+		GroveID: grove.ID,
+		Task:    "do something",
+		GCPIdentity: &GCPIdentityAssignment{
+			MetadataMode: "passthrough",
+		},
+	})
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	var resp CreateAgentResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.NotNil(t, resp.Agent.AppliedConfig.GCPIdentity)
+	assert.Equal(t, store.GCPMetadataModePassthrough, resp.Agent.AppliedConfig.GCPIdentity.MetadataMode)
+}
+
+func TestCreateAgent_GCPPassthrough_NonOwnerDenied(t *testing.T) {
+	disp := &createAgentDispatcher{createPhase: string(state.PhaseRunning)}
+	srv, s, _ := setupCreateAgentServer(t, disp)
+	ctx := context.Background()
+
+	// Create the broker owner
+	owner := &store.User{
+		ID:          "user-broker-owner-2",
+		Email:       "owner2@test.com",
+		DisplayName: "Broker Owner 2",
+		Role:        store.UserRoleMember,
+		Status:      "active",
+		Created:     time.Now(),
+	}
+	require.NoError(t, s.CreateUser(ctx, owner))
+
+	// Create a non-owner user
+	nonOwner := &store.User{
+		ID:          "user-non-owner",
+		Email:       "nonowner@test.com",
+		DisplayName: "Non Owner",
+		Role:        store.UserRoleMember,
+		Status:      "active",
+		Created:     time.Now(),
+	}
+	require.NoError(t, s.CreateUser(ctx, nonOwner))
+	ensureHubMembership(ctx, s, nonOwner.ID)
+
+	// Create a grove where the non-owner is a member
+	grove := &store.Grove{
+		ID:        "grove-pt-nonowner",
+		Name:      "Passthrough NonOwner Grove",
+		Slug:      "passthrough-nonowner-grove",
+		OwnerID:   nonOwner.ID,
+		CreatedBy: nonOwner.ID,
+		Created:   time.Now(),
+		Updated:   time.Now(),
+	}
+	require.NoError(t, s.CreateGrove(ctx, grove))
+	srv.createGroveMembersGroupAndPolicy(ctx, grove)
+
+	// Create a broker owned by a DIFFERENT user
+	broker := &store.RuntimeBroker{
+		ID:          "broker-pt-nonowner",
+		Name:        "Other Broker",
+		Slug:        "other-broker",
+		Status:      store.BrokerStatusOnline,
+		CreatedBy:   owner.ID,
+		AutoProvide: true, // AutoProvide so dispatch is allowed for any user
+	}
+	require.NoError(t, s.CreateRuntimeBroker(ctx, broker))
+	require.NoError(t, s.AddGroveProvider(ctx, &store.GroveProvider{
+		GroveID:    grove.ID,
+		BrokerID:   broker.ID,
+		BrokerName: broker.Name,
+		Status:     store.BrokerStatusOnline,
+	}))
+	grove.DefaultRuntimeBrokerID = broker.ID
+	require.NoError(t, s.UpdateGrove(ctx, grove))
+
+	// Non-owner should be DENIED passthrough
+	rec := doRequestAsUser(t, srv, nonOwner, http.MethodPost, "/api/v1/agents", CreateAgentRequest{
+		Name:    "pt-denied-agent",
+		GroveID: grove.ID,
+		Task:    "do something",
+		GCPIdentity: &GCPIdentityAssignment{
+			MetadataMode: "passthrough",
+		},
+	})
+	require.Equal(t, http.StatusForbidden, rec.Code)
+
+	var errResp ErrorResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errResp))
+	assert.Contains(t, errResp.Error.Message, "broker ownership")
+}
+
+func TestCreateAgent_GCPPassthrough_AdminAllowed(t *testing.T) {
+	disp := &createAgentDispatcher{createPhase: string(state.PhaseRunning)}
+	srv, s, _ := setupCreateAgentServer(t, disp)
+	ctx := context.Background()
+
+	brokerOwner := &store.User{
+		ID:          "user-broker-owner-3",
+		Email:       "owner3@test.com",
+		DisplayName: "Broker Owner 3",
+		Role:        store.UserRoleMember,
+		Status:      "active",
+		Created:     time.Now(),
+	}
+	require.NoError(t, s.CreateUser(ctx, brokerOwner))
+
+	adminUser := &store.User{
+		ID:          "user-admin-pt",
+		Email:       "admin@test.com",
+		DisplayName: "Admin User",
+		Role:        store.UserRoleAdmin,
+		Status:      "active",
+		Created:     time.Now(),
+	}
+	require.NoError(t, s.CreateUser(ctx, adminUser))
+	ensureHubMembership(ctx, s, adminUser.ID)
+
+	grove := &store.Grove{
+		ID:        "grove-pt-admin",
+		Name:      "Passthrough Admin Grove",
+		Slug:      "passthrough-admin-grove",
+		OwnerID:   adminUser.ID,
+		CreatedBy: adminUser.ID,
+		Created:   time.Now(),
+		Updated:   time.Now(),
+	}
+	require.NoError(t, s.CreateGrove(ctx, grove))
+	srv.createGroveMembersGroupAndPolicy(ctx, grove)
+
+	// Broker owned by someone else
+	broker := &store.RuntimeBroker{
+		ID:        "broker-pt-admin",
+		Name:      "Admin Test Broker",
+		Slug:      "admin-test-broker",
+		Status:    store.BrokerStatusOnline,
+		CreatedBy: brokerOwner.ID,
+	}
+	require.NoError(t, s.CreateRuntimeBroker(ctx, broker))
+	require.NoError(t, s.AddGroveProvider(ctx, &store.GroveProvider{
+		GroveID:    grove.ID,
+		BrokerID:   broker.ID,
+		BrokerName: broker.Name,
+		Status:     store.BrokerStatusOnline,
+	}))
+	grove.DefaultRuntimeBrokerID = broker.ID
+	require.NoError(t, s.UpdateGrove(ctx, grove))
+
+	// Admin (non-owner) should be allowed passthrough
+	rec := doRequestAsUser(t, srv, adminUser, http.MethodPost, "/api/v1/agents", CreateAgentRequest{
+		Name:    "pt-admin-agent",
+		GroveID: grove.ID,
+		Task:    "do something",
+		GCPIdentity: &GCPIdentityAssignment{
+			MetadataMode: "passthrough",
+		},
+	})
+	require.Equal(t, http.StatusCreated, rec.Code)
+}

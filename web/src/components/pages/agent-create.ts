@@ -1087,7 +1087,7 @@ export class ScionPageAgentCreate extends LitElement {
                       ? 'Prevents the agent from accessing any GCP identity. Token requests are denied.'
                       : this.gcpMetadataMode === 'assign'
                         ? 'Assigns a registered GCP service account. GCP client libraries will authenticate automatically.'
-                        : 'No metadata interception. The agent inherits whatever GCP identity is available on the host.'}
+                        : 'No metadata interception. The agent inherits the broker\'s GCP identity. Requires broker ownership.'}
                   </div>
                 </div>
 
