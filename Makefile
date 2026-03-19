@@ -13,7 +13,7 @@ CONTAINER_ARCH := $(shell if [ "$$(uname -m)" = "x86_64" ]; then echo amd64; els
 
 .DEFAULT_GOAL := help
 
-.PHONY: all build install test test-fast vet lint web clean help container-sciontool container-scion container-binaries
+.PHONY: all build install test test-fast vet lint web web-typecheck fmt-check ci clean help container-sciontool container-scion container-binaries
 
 ## all: Build the web frontend, then compile the Go binary with embedded assets
 all: web install
@@ -79,6 +79,29 @@ container-binaries: container-sciontool container-scion
 	@echo ""
 	@echo "Dev binaries ready in $(CONTAINER_DIR)/"
 	@echo "Usage: export SCION_DEV_BINARIES=$(CONTAINER_DIR)"
+
+## web-typecheck: Run TypeScript type checking on the web frontend
+web-typecheck:
+	@echo "Type-checking web frontend..."
+	@cd web && npm run typecheck
+	@echo "Type check passed."
+
+## fmt-check: Check Go formatting (warn only)
+fmt-check:
+	@echo "Checking Go formatting..."
+	@UNFORMATTED=$$(gofmt -l .); \
+	if [ -n "$$UNFORMATTED" ]; then \
+		echo "WARNING: Go formatting issues found in:"; \
+		echo "$$UNFORMATTED"; \
+		echo "(Run 'gofmt -w .' to fix)"; \
+	else \
+		echo "Go formatting OK."; \
+	fi
+
+## ci: Run the full CI pipeline locally (mirrors GitHub Actions)
+ci: web web-typecheck fmt-check lint test-fast build
+	@echo ""
+	@echo "CI passed."
 
 ## clean: Remove build artifacts
 clean:
