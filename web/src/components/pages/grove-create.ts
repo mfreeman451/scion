@@ -351,6 +351,24 @@ export class ScionPageGroveCreate extends LitElement {
             </div>
           </div>
 
+          ${this.mode === 'git'
+            ? html`
+                <div class="form-field">
+                  <label for="gitRemote">Git Remote URL</label>
+                  <sl-input
+                    id="gitRemote"
+                    placeholder="https://github.com/org/repo.git"
+                    .value=${this.gitRemote}
+                    @sl-input=${(e: Event) => this.onGitRemoteInput(e)}
+                    required
+                  ></sl-input>
+                  <div class="hint">
+                    HTTPS or SSH URL of the git repository.
+                  </div>
+                </div>
+              `
+            : nothing}
+
           <div class="form-field">
             <label for="name">Name</label>
             <sl-input
@@ -375,20 +393,6 @@ export class ScionPageGroveCreate extends LitElement {
 
           ${this.mode === 'git'
             ? html`
-                <div class="form-field">
-                  <label for="gitRemote">Git Remote URL</label>
-                  <sl-input
-                    id="gitRemote"
-                    placeholder="https://github.com/org/repo.git"
-                    .value=${this.gitRemote}
-                    @sl-input=${(e: Event) => this.onGitRemoteInput(e)}
-                    required
-                  ></sl-input>
-                  <div class="hint">
-                    HTTPS or SSH URL of the git repository.
-                  </div>
-                </div>
-
                 <div class="form-field">
                   <label for="branch">Default Branch</label>
                   <sl-input
