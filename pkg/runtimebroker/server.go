@@ -187,6 +187,12 @@ type Server struct {
 
 	stateDir string
 
+	// auxiliaryManagers holds managers for non-default runtimes created via
+	// profile resolution (e.g. kubernetes when default is docker). Used by
+	// LookupContainerID as a fallback when the default manager can't find an agent.
+	auxiliaryManagers   map[string]agent.Manager
+	auxiliaryManagersMu sync.RWMutex
+
 	// Dedicated request logger (nil = disabled)
 	requestLogger *slog.Logger
 
@@ -235,15 +241,16 @@ func New(cfg ServerConfig, mgr agent.Manager, rt runtime.Runtime) *Server {
 	}
 
 	srv := &Server{
-		config:           cfg,
-		manager:          mgr,
-		runtime:          rt,
-		mux:              http.NewServeMux(),
-		startTime:        time.Now(),
-		version:          "0.1.0", // TODO: Get from build info
-		hubConnections:   make(map[string]*HubConnection),
-		pendingEnvGather: make(map[string]*pendingAgentState),
-		dispatchAttempts: make(map[string]*dispatchAttempt),
+		config:            cfg,
+		manager:           mgr,
+		runtime:           rt,
+		mux:               http.NewServeMux(),
+		startTime:         time.Now(),
+		version:           "0.1.0", // TODO: Get from build info
+		hubConnections:    make(map[string]*HubConnection),
+		pendingEnvGather:  make(map[string]*pendingAgentState),
+		dispatchAttempts:  make(map[string]*dispatchAttempt),
+		auxiliaryManagers: make(map[string]agent.Manager),
 
 		// Subsystem loggers
 		agentLifecycleLog: logging.Subsystem("broker.agent-lifecycle"),
@@ -812,9 +819,29 @@ func (s *Server) LookupContainerID(ctx context.Context, slug string) (string, er
 	slug = strings.ToLower(slug)
 
 	// Look up agent using List with filter by name
-	agents, err := s.manager.List(ctx, map[string]string{"scion.name": slug})
+	filter := map[string]string{"scion.name": slug}
+	agents, err := s.manager.List(ctx, filter)
 	if err != nil {
 		return "", fmt.Errorf("failed to list agents: %w", err)
+	}
+
+	// Fall back to auxiliary runtimes (e.g. kubernetes when default is docker)
+	if len(agents) == 0 {
+		s.auxiliaryManagersMu.RLock()
+		auxManagers := make(map[string]agent.Manager, len(s.auxiliaryManagers))
+		for k, v := range s.auxiliaryManagers {
+			auxManagers[k] = v
+		}
+		s.auxiliaryManagersMu.RUnlock()
+
+		for rtName, mgr := range auxManagers {
+			auxAgents, auxErr := mgr.List(ctx, filter)
+			if auxErr == nil && len(auxAgents) > 0 {
+				agents = auxAgents
+				slog.Debug("Agent found via auxiliary runtime", "slug", slug, "runtime", rtName)
+				break
+			}
+		}
 	}
 
 	if len(agents) == 0 {
@@ -836,6 +863,71 @@ func (s *Server) LookupContainerID(ctx context.Context, slug string) (string, er
 	}
 
 	return containerID, nil
+}
+
+// LookupAgent implements AgentLookup interface.
+// It looks up an agent by slug and returns detailed info including the runtime.
+func (s *Server) LookupAgent(ctx context.Context, slug string) (*AgentLookupResult, error) {
+	if s.manager == nil {
+		return nil, fmt.Errorf("agent manager not available")
+	}
+
+	slug = strings.ToLower(slug)
+	filter := map[string]string{"scion.name": slug}
+
+	// Try default manager first
+	agents, err := s.manager.List(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agents: %w", err)
+	}
+
+	runtimeName := s.runtime.Name()
+
+	// Fall back to auxiliary runtimes
+	if len(agents) == 0 {
+		s.auxiliaryManagersMu.RLock()
+		auxManagers := make(map[string]agent.Manager, len(s.auxiliaryManagers))
+		for k, v := range s.auxiliaryManagers {
+			auxManagers[k] = v
+		}
+		s.auxiliaryManagersMu.RUnlock()
+
+		for rtName, mgr := range auxManagers {
+			auxAgents, auxErr := mgr.List(ctx, filter)
+			if auxErr == nil && len(auxAgents) > 0 {
+				agents = auxAgents
+				runtimeName = rtName
+				slog.Debug("Agent found via auxiliary runtime", "slug", slug, "runtime", rtName)
+				break
+			}
+		}
+	}
+
+	if len(agents) == 0 {
+		return nil, fmt.Errorf("agent '%s' not found", slug)
+	}
+
+	ag := agents[0]
+
+	containerID := ag.Labels["scion.container.id"]
+	if containerID == "" {
+		containerID = ag.ContainerID
+	}
+	if containerID == "" {
+		containerID = ag.ID
+	}
+
+	result := &AgentLookupResult{
+		ContainerID: containerID,
+		RuntimeName: runtimeName,
+	}
+
+	// Include K8s metadata if available
+	if ag.Kubernetes != nil {
+		result.Namespace = ag.Kubernetes.Namespace
+	}
+
+	return result, nil
 }
 
 // RuntimeCommand implements AgentLookup interface.

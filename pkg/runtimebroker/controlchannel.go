@@ -71,11 +71,20 @@ func DefaultControlChannelConfig() ControlChannelConfig {
 	}
 }
 
+// AgentLookupResult holds the result of looking up an agent for PTY attachment.
+type AgentLookupResult struct {
+	ContainerID string // Container/pod ID
+	RuntimeName string // Runtime that owns the agent (e.g., "docker", "kubernetes")
+	Namespace   string // Kubernetes namespace (empty for non-k8s runtimes)
+}
+
 // AgentLookup provides agent information for control channel operations.
 type AgentLookup interface {
 	// LookupContainerID returns the container ID for an agent by its slug/name.
 	// Returns empty string if not found or agent doesn't support attach.
 	LookupContainerID(ctx context.Context, slug string) (containerID string, err error)
+	// LookupAgent returns detailed lookup info including the runtime that owns the agent.
+	LookupAgent(ctx context.Context, slug string) (*AgentLookupResult, error)
 	// RuntimeCommand returns the container runtime command (e.g., "docker", "container").
 	RuntimeCommand() string
 }
@@ -633,26 +642,29 @@ func (c *ControlChannelClient) handlePTYStream(handler *StreamHandler, cols, row
 		return
 	}
 
-	containerID, err := c.agentLookup.LookupContainerID(c.ctx, handler.slug)
+	result, err := c.agentLookup.LookupAgent(c.ctx, handler.slug)
 	if err != nil {
 		c.log.Error("PTY stream failed: agent lookup error", "slug", handler.slug, "error", err)
 		c.CloseStream(handler.streamID, fmt.Sprintf("agent lookup failed: %v", err), 404)
 		return
 	}
 
-	if containerID == "" {
+	if result.ContainerID == "" {
 		c.log.Error("PTY stream failed: container not found", "slug", handler.slug)
 		c.CloseStream(handler.streamID, "container not found", 404)
 		return
 	}
 
-	c.log.Debug("PTY stream found container", "slug", handler.slug, "containerID", containerID)
+	c.log.Debug("PTY stream found container", "slug", handler.slug, "containerID", result.ContainerID, "runtime", result.RuntimeName)
 
-	// Get the runtime command (docker, container, etc.)
-	runtimeCmd := c.agentLookup.RuntimeCommand()
+	// Get the runtime command - use agent-specific runtime if available, else default
+	runtimeCmd := result.RuntimeName
+	if runtimeCmd == "" {
+		runtimeCmd = c.agentLookup.RuntimeCommand()
+	}
 
 	// Start the actual PTY session
-	c.handlePTYStreamWithAgent(handler, cols, rows, containerID, runtimeCmd)
+	c.handlePTYStreamWithAgent(handler, cols, rows, result.ContainerID, runtimeCmd, result.Namespace)
 
 	c.log.Info("PTY stream ended via control channel", "slug", handler.slug)
 

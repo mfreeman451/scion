@@ -46,7 +46,7 @@ const (
 // available. After starting a container, sciontool init needs time to set up
 // the user, run pre-start hooks, and launch the tmux session. Without this
 // wait, an immediate attach would fail with "no sessions".
-func waitForTmuxSession(ctx context.Context, runtimeCmd, containerID string) error {
+func waitForTmuxSession(ctx context.Context, runtimeCmd, containerID, namespace string) error {
 	ctx, cancel := context.WithTimeout(ctx, tmuxSessionWaitTimeout)
 	defer cancel()
 
@@ -58,13 +58,30 @@ func waitForTmuxSession(ctx context.Context, runtimeCmd, containerID string) err
 		case <-ctx.Done():
 			return fmt.Errorf("timed out waiting for tmux session in container '%s' to become ready", containerID)
 		case <-ticker.C:
-			cmd := exec.CommandContext(ctx, runtimeCmd, "exec", "--user", "scion", containerID, "tmux", "has-session", "-t", "scion")
+			var cmd *exec.Cmd
+			if runtimeCmd == "kubernetes" || runtimeCmd == "k8s" {
+				args := buildKubectlExecArgs(namespace, containerID, []string{"tmux", "has-session", "-t", "scion"})
+				cmd = exec.CommandContext(ctx, "kubectl", args...)
+			} else {
+				cmd = exec.CommandContext(ctx, runtimeCmd, "exec", "--user", "scion", containerID, "tmux", "has-session", "-t", "scion")
+			}
 			if err := cmd.Run(); err == nil {
 				return nil
 			}
 			slog.Debug("Waiting for tmux session", "containerID", containerID, "runtime", runtimeCmd)
 		}
 	}
+}
+
+// buildKubectlExecArgs constructs arguments for kubectl exec into a pod.
+func buildKubectlExecArgs(namespace, podName string, command []string) []string {
+	args := []string{"exec", "-it", podName, "-c", "agent"}
+	if namespace != "" {
+		args = append(args, "-n", namespace)
+	}
+	args = append(args, "--")
+	args = append(args, command...)
+	return args
 }
 
 var ptyUpgrader = websocket.Upgrader{
@@ -92,21 +109,14 @@ func (s *Server) handleAgentAttach(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Look up agent using List with filter (normalize to lowercase for slug match)
-	normalizedID := strings.ToLower(agentID)
-	agents, err := s.manager.List(ctx, map[string]string{"scion.name": normalizedID})
-	if err != nil || len(agents) == 0 {
+	// Look up agent using LookupAgent for runtime-aware info
+	result, err := s.LookupAgent(ctx, agentID)
+	if err != nil {
 		NotFound(w, "Agent")
 		return
 	}
 
-	agent := agents[0]
-
-	// Get container ID
-	containerID := agent.Labels["scion.container.id"]
-	if containerID == "" {
-		containerID = agent.ID // Fall back to agent ID
-	}
+	containerID := result.ContainerID
 
 	// Upgrade to WebSocket
 	conn, err := ptyUpgrader.Upgrade(w, r, nil)
@@ -126,10 +136,15 @@ func (s *Server) handleAgentAttach(w http.ResponseWriter, r *http.Request) {
 		fmt.Sscanf(rowStr, "%d", &rows)
 	}
 
-	slog.Info("Attach session started", "agentID", agentID, "containerID", containerID)
+	runtimeCmd := result.RuntimeName
+	if runtimeCmd == "" {
+		runtimeCmd = s.RuntimeCommand()
+	}
+
+	slog.Info("Attach session started", "agentID", agentID, "containerID", containerID, "runtime", runtimeCmd)
 
 	// Start PTY session
-	session := newLocalPTYSession(ctx, agentID, containerID, conn, cols, rows)
+	session := newLocalPTYSession(ctx, agentID, containerID, runtimeCmd, result.Namespace, conn, cols, rows)
 	if err := session.Run(); err != nil && err != io.EOF {
 		slog.Error("Attach session error", "agentID", agentID, "error", err)
 	}
@@ -163,6 +178,8 @@ type LocalPTYSession struct {
 	cancel      context.CancelFunc
 	agentID     string
 	containerID string
+	runtimeCmd  string // Container runtime command (docker, container, kubernetes, etc.)
+	namespace   string // Kubernetes namespace (empty for non-k8s runtimes)
 	conn        *websocket.Conn
 	cols        int
 	rows        int
@@ -173,13 +190,18 @@ type LocalPTYSession struct {
 }
 
 // newLocalPTYSession creates a new local PTY session.
-func newLocalPTYSession(ctx context.Context, agentID, containerID string, conn *websocket.Conn, cols, rows int) *LocalPTYSession {
+func newLocalPTYSession(ctx context.Context, agentID, containerID, runtimeCmd, namespace string, conn *websocket.Conn, cols, rows int) *LocalPTYSession {
+	if runtimeCmd == "" {
+		runtimeCmd = "docker"
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	return &LocalPTYSession{
 		ctx:         ctx,
 		cancel:      cancel,
 		agentID:     agentID,
 		containerID: containerID,
+		runtimeCmd:  runtimeCmd,
+		namespace:   namespace,
 		conn:        conn,
 		cols:        cols,
 		rows:        rows,
@@ -224,23 +246,32 @@ func (s *LocalPTYSession) Run() error {
 // startDockerExec starts a docker exec session with tmux attach using a real PTY.
 func (s *LocalPTYSession) startDockerExec() error {
 	// Wait for the tmux session to be ready before attaching
-	if err := waitForTmuxSession(s.ctx, "docker", s.containerID); err != nil {
+	if err := waitForTmuxSession(s.ctx, s.runtimeCmd, s.containerID, s.namespace); err != nil {
 		return err
 	}
 
 	// We need BOTH:
-	// 1. -it flags: tell Docker to allocate a TTY inside the container
+	// 1. -it flags: tell the runtime to allocate a TTY inside the container
 	// 2. pty.StartWithSize: allocate a PTY on the broker side for proper terminal handling
 	// The broker-side PTY handles I/O with the websocket, while the container-side TTY
 	// is required for tmux to function properly inside the container.
-	args := []string{
-		"exec", "-it",
-		"--user", "scion",
-		s.containerID,
-		"tmux", "attach-session", "-t", "scion",
+	var execBin string
+	var args []string
+
+	if s.runtimeCmd == "kubernetes" || s.runtimeCmd == "k8s" {
+		execBin = "kubectl"
+		args = buildKubectlExecArgs(s.namespace, s.containerID, []string{"tmux", "attach-session", "-t", "scion"})
+	} else {
+		execBin = s.runtimeCmd
+		args = []string{
+			"exec", "-it",
+			"--user", "scion",
+			s.containerID,
+			"tmux", "attach-session", "-t", "scion",
+		}
 	}
 
-	s.cmd = exec.CommandContext(s.ctx, "docker", args...)
+	s.cmd = exec.CommandContext(s.ctx, execBin, args...)
 
 	// Start with a real PTY - this provides proper terminal handling
 	ptmx, err := pty.StartWithSize(s.cmd, &pty.Winsize{
@@ -248,7 +279,7 @@ func (s *LocalPTYSession) startDockerExec() error {
 		Rows: uint16(s.rows),
 	})
 	if err != nil {
-		return fmt.Errorf("failed to start docker exec with PTY: %w", err)
+		return fmt.Errorf("failed to start %s exec with PTY: %w", execBin, err)
 	}
 
 	// PTY master is used for both reading and writing
@@ -344,7 +375,8 @@ type StreamPTYHandler struct {
 	handler     *StreamHandler
 	slug        string
 	containerID string
-	runtimeCmd  string // Container runtime command (docker, container, etc.)
+	runtimeCmd  string // Container runtime command (docker, container, kubernetes, etc.)
+	namespace   string // Kubernetes namespace (empty for non-k8s runtimes)
 	cols        int
 	rows        int
 	ptyMaster   *os.File
@@ -355,7 +387,7 @@ type StreamPTYHandler struct {
 }
 
 // NewStreamPTYHandler creates a handler for a PTY stream from the control channel.
-func NewStreamPTYHandler(client *ControlChannelClient, handler *StreamHandler, containerID, runtimeCmd string, cols, rows int) *StreamPTYHandler {
+func NewStreamPTYHandler(client *ControlChannelClient, handler *StreamHandler, containerID, runtimeCmd, namespace string, cols, rows int) *StreamPTYHandler {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &StreamPTYHandler{
 		client:      client,
@@ -363,6 +395,7 @@ func NewStreamPTYHandler(client *ControlChannelClient, handler *StreamHandler, c
 		slug:        handler.slug,
 		containerID: containerID,
 		runtimeCmd:  runtimeCmd,
+		namespace:   namespace,
 		cols:        cols,
 		rows:        rows,
 		ctx:         ctx,
@@ -438,16 +471,16 @@ func (h *StreamPTYHandler) handleResize() {
 }
 
 // startExec starts container exec with tmux attach using the configured runtime.
-// Uses a real PTY for proper terminal handling with both Docker and Apple runtimes.
+// Uses a real PTY for proper terminal handling with Docker, Apple, and Kubernetes runtimes.
 func (h *StreamPTYHandler) startDockerExec() error {
-	// Use the configured runtime command (docker, container, etc.)
+	// Use the configured runtime command (docker, container, kubernetes, etc.)
 	runtimeCmd := h.runtimeCmd
 	if runtimeCmd == "" {
 		runtimeCmd = "docker"
 	}
 
 	// Wait for the tmux session to be ready before attaching
-	if err := waitForTmuxSession(h.ctx, runtimeCmd, h.containerID); err != nil {
+	if err := waitForTmuxSession(h.ctx, runtimeCmd, h.containerID, h.namespace); err != nil {
 		return err
 	}
 
@@ -456,14 +489,23 @@ func (h *StreamPTYHandler) startDockerExec() error {
 	// 2. pty.StartWithSize: allocate a PTY on the broker side for proper terminal handling
 	// The broker-side PTY handles I/O with the websocket, while the container-side TTY
 	// is required for tmux to function properly inside the container.
-	args := []string{
-		"exec", "-it",
-		"--user", "scion",
-		h.containerID,
-		"tmux", "attach-session", "-t", "scion",
+	var execBin string
+	var args []string
+
+	if runtimeCmd == "kubernetes" || runtimeCmd == "k8s" {
+		execBin = "kubectl"
+		args = buildKubectlExecArgs(h.namespace, h.containerID, []string{"tmux", "attach-session", "-t", "scion"})
+	} else {
+		execBin = runtimeCmd
+		args = []string{
+			"exec", "-it",
+			"--user", "scion",
+			h.containerID,
+			"tmux", "attach-session", "-t", "scion",
+		}
 	}
 
-	h.cmd = exec.CommandContext(h.ctx, runtimeCmd, args...)
+	h.cmd = exec.CommandContext(h.ctx, execBin, args...)
 
 	// Start with a real PTY - this provides proper terminal handling
 	ptmx, err := pty.StartWithSize(h.cmd, &pty.Winsize{
@@ -471,7 +513,7 @@ func (h *StreamPTYHandler) startDockerExec() error {
 		Rows: uint16(h.rows),
 	})
 	if err != nil {
-		return fmt.Errorf("failed to start %s exec with PTY: %w", runtimeCmd, err)
+		return fmt.Errorf("failed to start %s exec with PTY: %w", execBin, err)
 	}
 
 	// PTY master is used for both reading and writing
@@ -536,8 +578,8 @@ func (h *StreamPTYHandler) Close() {
 }
 
 // handlePTYStreamWithAgent is called by the control channel to handle PTY streams.
-func (c *ControlChannelClient) handlePTYStreamWithAgent(handler *StreamHandler, cols, rows int, containerID, runtimeCmd string) {
-	ptyHandler := NewStreamPTYHandler(c, handler, containerID, runtimeCmd, cols, rows)
+func (c *ControlChannelClient) handlePTYStreamWithAgent(handler *StreamHandler, cols, rows int, containerID, runtimeCmd, namespace string) {
+	ptyHandler := NewStreamPTYHandler(c, handler, containerID, runtimeCmd, namespace, cols, rows)
 	if err := ptyHandler.Run(); err != nil && err != io.EOF {
 		slog.Error("PTY stream error", "slug", handler.slug, "error", err)
 	}

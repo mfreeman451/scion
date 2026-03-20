@@ -1727,7 +1727,9 @@ func (s *Server) resolveManagerForOpts(opts api.StartOptions) agent.Manager {
 		return s.manager
 	}
 
-	// Profile specifies a different runtime - resolve and create a temporary manager
+	// Profile specifies a different runtime - resolve and create a manager.
+	// Cache it as an auxiliary manager so LookupContainerID can find agents
+	// created on non-default runtimes (e.g. K8s pods when default is docker).
 	resolved := agent.ResolveRuntime(opts.GrovePath, opts.Name, opts.Profile)
 
 	if s.config.Debug {
@@ -1738,7 +1740,15 @@ func (s *Server) resolveManagerForOpts(opts api.StartOptions) agent.Manager {
 		)
 	}
 
-	return agent.NewManager(resolved)
+	mgr := agent.NewManager(resolved)
+
+	if resolved.Name() != "error" {
+		s.auxiliaryManagersMu.Lock()
+		s.auxiliaryManagers[resolved.Name()] = mgr
+		s.auxiliaryManagersMu.Unlock()
+	}
+
+	return mgr
 }
 
 // Helper functions
