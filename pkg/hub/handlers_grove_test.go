@@ -1290,6 +1290,128 @@ func TestGroveSyncTemplates_RepoURL_BareHost(t *testing.T) {
 	assert.Equal(t, "https://github.com/ptone/scion-athenaeum.git", agent.AppliedConfig.GitClone.URL)
 }
 
+// TestGroveSyncTemplates_RepoURL_GitHubAppSourceGrove verifies that when a
+// non-git grove loads templates from a repo URL, and a git-based grove for
+// the same repo (with the same owner) has a GitHub App installed, the
+// sync agent gets a label pointing to that source grove.
+func TestGroveSyncTemplates_RepoURL_GitHubAppSourceGrove(t *testing.T) {
+	srv, s := testServer(t)
+	ctx := context.Background()
+
+	broker := &store.RuntimeBroker{
+		ID:     "broker-sync-ghapp",
+		Slug:   "sync-ghapp-broker",
+		Name:   "Sync GHApp Broker",
+		Status: store.BrokerStatusOnline,
+	}
+	require.NoError(t, s.CreateRuntimeBroker(ctx, broker))
+
+	ownerID := "shared-owner-123"
+
+	// Create the git-based grove with a GitHub App installation.
+	installID := int64(42)
+	gitGrove := &store.Grove{
+		ID:                     "grove-git-source",
+		Slug:                   "git-source-grove",
+		Name:                   "Git Source Grove",
+		GitRemote:              "github.com/example/templates",
+		OwnerID:                ownerID,
+		GitHubInstallationID:   &installID,
+		DefaultRuntimeBrokerID: broker.ID,
+	}
+	require.NoError(t, s.CreateGrove(ctx, gitGrove))
+
+	// Create the non-git grove with the same owner.
+	hubGrove := &store.Grove{
+		ID:                     "grove-hub-consumer",
+		Slug:                   "hub-consumer-grove",
+		Name:                   "Hub Consumer Grove",
+		OwnerID:                ownerID,
+		DefaultRuntimeBrokerID: broker.ID,
+	}
+	require.NoError(t, s.CreateGrove(ctx, hubGrove))
+	require.NoError(t, s.AddGroveProvider(ctx, &store.GroveProvider{
+		GroveID:  hubGrove.ID,
+		BrokerID: broker.ID,
+		Status:   store.BrokerStatusOnline,
+		LinkedBy: "test",
+	}))
+
+	disp := &createAgentDispatcher{createPhase: string(state.PhaseRunning)}
+	srv.SetDispatcher(disp)
+
+	rec := doRequest(t, srv, http.MethodPost, "/api/v1/groves/"+hubGrove.ID+"/sync-templates",
+		SyncTemplatesRequest{RepoURL: "https://github.com/example/templates"})
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var resp SyncTemplatesResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+
+	agent, err := s.GetAgent(ctx, resp.AgentID)
+	require.NoError(t, err)
+
+	assert.Equal(t, gitGrove.ID, agent.Labels["scion.dev/github-token-source-grove"],
+		"should reference the git grove with the GitHub App")
+}
+
+// TestGroveSyncTemplates_RepoURL_DifferentOwnerNoLabel verifies that the
+// source grove label is NOT set when the grove owners differ.
+func TestGroveSyncTemplates_RepoURL_DifferentOwnerNoLabel(t *testing.T) {
+	srv, s := testServer(t)
+	ctx := context.Background()
+
+	broker := &store.RuntimeBroker{
+		ID:     "broker-sync-diffown",
+		Slug:   "sync-diffown-broker",
+		Name:   "Sync DiffOwn Broker",
+		Status: store.BrokerStatusOnline,
+	}
+	require.NoError(t, s.CreateRuntimeBroker(ctx, broker))
+
+	installID := int64(99)
+	gitGrove := &store.Grove{
+		ID:                     "grove-git-other-owner",
+		Slug:                   "git-other-owner",
+		Name:                   "Git Other Owner Grove",
+		GitRemote:              "github.com/other/repo",
+		OwnerID:                "owner-a",
+		GitHubInstallationID:   &installID,
+		DefaultRuntimeBrokerID: broker.ID,
+	}
+	require.NoError(t, s.CreateGrove(ctx, gitGrove))
+
+	hubGrove := &store.Grove{
+		ID:                     "grove-hub-diff-owner",
+		Slug:                   "hub-diff-owner",
+		Name:                   "Hub Diff Owner Grove",
+		OwnerID:                "owner-b",
+		DefaultRuntimeBrokerID: broker.ID,
+	}
+	require.NoError(t, s.CreateGrove(ctx, hubGrove))
+	require.NoError(t, s.AddGroveProvider(ctx, &store.GroveProvider{
+		GroveID:  hubGrove.ID,
+		BrokerID: broker.ID,
+		Status:   store.BrokerStatusOnline,
+		LinkedBy: "test",
+	}))
+
+	disp := &createAgentDispatcher{createPhase: string(state.PhaseRunning)}
+	srv.SetDispatcher(disp)
+
+	rec := doRequest(t, srv, http.MethodPost, "/api/v1/groves/"+hubGrove.ID+"/sync-templates",
+		SyncTemplatesRequest{RepoURL: "https://github.com/other/repo"})
+	require.Equal(t, http.StatusOK, rec.Code, "body: %s", rec.Body.String())
+
+	var resp SyncTemplatesResponse
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&resp))
+
+	agent, err := s.GetAgent(ctx, resp.AgentID)
+	require.NoError(t, err)
+
+	assert.Empty(t, agent.Labels["scion.dev/github-token-source-grove"],
+		"should NOT reference source grove when owners differ")
+}
+
 // TestGroveSyncTemplates_RepoURL_InvalidURL verifies that an invalid repo URL is rejected.
 func TestGroveSyncTemplates_RepoURL_InvalidURL(t *testing.T) {
 	srv, s := testServer(t)

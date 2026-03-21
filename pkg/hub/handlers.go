@@ -7693,6 +7693,16 @@ func (s *Server) handleGroveSyncTemplates(w http.ResponseWriter, r *http.Request
 			Branch: "main",
 			Depth:  1,
 		}
+
+		// Look up a git-based grove for the same repo that has a GitHub App
+		// installation. If the source grove has the same owner, the dispatcher
+		// can mint a token using that installation for cloning.
+		normalizedRemote := util.NormalizeGitRemote(cleanedURL)
+		if sourceGrove, err := s.store.GetGroveByGitRemote(ctx, normalizedRemote); err == nil {
+			if sourceGrove.GitHubInstallationID != nil && sourceGrove.OwnerID == grove.OwnerID {
+				agent.Labels["scion.dev/github-token-source-grove"] = sourceGrove.ID
+			}
+		}
 	}
 
 	if err := s.store.CreateAgent(ctx, agent); err != nil {

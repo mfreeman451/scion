@@ -387,27 +387,46 @@ func (d *HTTPAgentDispatcher) buildCreateRequest(ctx context.Context, agent *sto
 	// GITHUB_TOKEN from secrets/env.
 	if d.githubAppMinter != nil && agent.GroveID != "" {
 		grove, groveErr := d.store.GetGrove(ctx, agent.GroveID)
-		if groveErr == nil && grove.GitHubInstallationID != nil {
-			token, expiry, mintErr := d.githubAppMinter.MintGitHubAppTokenForGrove(ctx, grove)
-			if mintErr != nil {
-				if d.debug {
-					d.log.Warn("buildCreateRequest: GitHub App token minting failed, falling back to PAT",
-						"error", mintErr, "groveID", agent.GroveID)
+		if groveErr == nil {
+			// Determine which grove to use for GitHub App token minting.
+			// Prefer the agent's own grove; fall back to a source grove
+			// referenced by label (e.g. for template-sync agents loading
+			// from an external repo whose git grove has the app installed).
+			mintGrove := grove
+			if grove.GitHubInstallationID == nil {
+				if sourceGroveID := agent.Labels["scion.dev/github-token-source-grove"]; sourceGroveID != "" {
+					if sg, sgErr := d.store.GetGrove(ctx, sourceGroveID); sgErr == nil && sg.GitHubInstallationID != nil {
+						mintGrove = sg
+						if d.debug {
+							d.log.Debug("buildCreateRequest: using source grove for GitHub App token",
+								"sourceGroveID", sourceGroveID,
+								"installationID", *sg.GitHubInstallationID)
+						}
+					}
 				}
-				// Fall through — PAT from secrets/env may still be available
-			} else if token != "" {
-				if req.ResolvedEnv == nil {
-					req.ResolvedEnv = make(map[string]string)
-				}
-				req.ResolvedEnv["GITHUB_TOKEN"] = token
-				req.ResolvedEnv["SCION_GITHUB_APP_ENABLED"] = "true"
-				req.ResolvedEnv["SCION_GITHUB_TOKEN_EXPIRY"] = expiry
-				req.ResolvedEnv["SCION_GITHUB_TOKEN_PATH"] = "/tmp/.github-token"
-				if d.debug {
-					d.log.Debug("buildCreateRequest: injected GitHub App token",
-						"groveID", agent.GroveID,
-						"installationID", *grove.GitHubInstallationID,
-						"expiry", expiry)
+			}
+			if mintGrove.GitHubInstallationID != nil {
+				token, expiry, mintErr := d.githubAppMinter.MintGitHubAppTokenForGrove(ctx, mintGrove)
+				if mintErr != nil {
+					if d.debug {
+						d.log.Warn("buildCreateRequest: GitHub App token minting failed, falling back to PAT",
+							"error", mintErr, "groveID", agent.GroveID)
+					}
+					// Fall through — PAT from secrets/env may still be available
+				} else if token != "" {
+					if req.ResolvedEnv == nil {
+						req.ResolvedEnv = make(map[string]string)
+					}
+					req.ResolvedEnv["GITHUB_TOKEN"] = token
+					req.ResolvedEnv["SCION_GITHUB_APP_ENABLED"] = "true"
+					req.ResolvedEnv["SCION_GITHUB_TOKEN_EXPIRY"] = expiry
+					req.ResolvedEnv["SCION_GITHUB_TOKEN_PATH"] = "/tmp/.github-token"
+					if d.debug {
+						d.log.Debug("buildCreateRequest: injected GitHub App token",
+							"groveID", agent.GroveID,
+							"installationID", *mintGrove.GitHubInstallationID,
+							"expiry", expiry)
+					}
 				}
 			}
 		}
@@ -929,18 +948,28 @@ func (d *HTTPAgentDispatcher) DispatchAgentStart(ctx context.Context, agent *sto
 	if d.githubAppMinter != nil && agent.GroveID != "" {
 		if resolvedEnv["GITHUB_TOKEN"] == "" {
 			grove, groveErr := d.store.GetGrove(ctx, agent.GroveID)
-			if groveErr == nil && grove.GitHubInstallationID != nil {
-				token, expiry, mintErr := d.githubAppMinter.MintGitHubAppTokenForGrove(ctx, grove)
-				if mintErr != nil {
-					if d.debug {
-						d.log.Warn("DispatchAgentStart: GitHub App token minting failed",
-							"error", mintErr, "groveID", agent.GroveID)
+			if groveErr == nil {
+				mintGrove := grove
+				if grove.GitHubInstallationID == nil {
+					if sourceGroveID := agent.Labels["scion.dev/github-token-source-grove"]; sourceGroveID != "" {
+						if sg, sgErr := d.store.GetGrove(ctx, sourceGroveID); sgErr == nil && sg.GitHubInstallationID != nil {
+							mintGrove = sg
+						}
 					}
-				} else if token != "" {
-					resolvedEnv["GITHUB_TOKEN"] = token
-					resolvedEnv["SCION_GITHUB_APP_ENABLED"] = "true"
-					resolvedEnv["SCION_GITHUB_TOKEN_EXPIRY"] = expiry
-					resolvedEnv["SCION_GITHUB_TOKEN_PATH"] = "/tmp/.github-token"
+				}
+				if mintGrove.GitHubInstallationID != nil {
+					token, expiry, mintErr := d.githubAppMinter.MintGitHubAppTokenForGrove(ctx, mintGrove)
+					if mintErr != nil {
+						if d.debug {
+							d.log.Warn("DispatchAgentStart: GitHub App token minting failed",
+								"error", mintErr, "groveID", agent.GroveID)
+						}
+					} else if token != "" {
+						resolvedEnv["GITHUB_TOKEN"] = token
+						resolvedEnv["SCION_GITHUB_APP_ENABLED"] = "true"
+						resolvedEnv["SCION_GITHUB_TOKEN_EXPIRY"] = expiry
+						resolvedEnv["SCION_GITHUB_TOKEN_PATH"] = "/tmp/.github-token"
+					}
 				}
 			}
 		}
