@@ -220,6 +220,13 @@ func NoRuntimeBroker(w http.ResponseWriter, message string, availableBrokers []R
 	writeError(w, http.StatusUnprocessableEntity, ErrCodeNoRuntimeBroker, message, details)
 }
 
+// ServiceNotReady writes a 503 Service Unavailable response with a Retry-After
+// header, indicating the server is still initializing and the client should retry.
+func ServiceNotReady(w http.ResponseWriter, message string) {
+	w.Header().Set("Retry-After", "5")
+	writeError(w, http.StatusServiceUnavailable, ErrCodeUnavailable, message, nil)
+}
+
 // RuntimeBrokerUnavailable writes a 503 Service Unavailable response when the
 // specified runtime broker is not available.
 func RuntimeBrokerUnavailable(w http.ResponseWriter, brokerID string, availableBrokers []RuntimeBrokerSummary) {

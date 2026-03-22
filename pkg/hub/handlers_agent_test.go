@@ -3258,6 +3258,74 @@ func TestHandleAgentMessage_NoNotifyNoSubscription(t *testing.T) {
 	assert.Len(t, subs, 0, "no subscription should be created without notify flag")
 }
 
+// TestHandleAgentMessage_NoDispatcher_Returns503 verifies that sending a message
+// when no dispatcher is configured returns 503 with a Retry-After header.
+func TestHandleAgentMessage_NoDispatcher_Returns503(t *testing.T) {
+	srv, s := testServer(t)
+	ctx := context.Background()
+
+	grove := &store.Grove{
+		ID:   "grove-msg-503",
+		Name: "Msg 503 Grove",
+		Slug: "msg-503-grove",
+	}
+	require.NoError(t, s.CreateGrove(ctx, grove))
+
+	agent := &store.Agent{
+		ID:      "agent-msg-503",
+		Slug:    "agent-msg-503",
+		Name:    "Msg 503 Agent",
+		GroveID: grove.ID,
+		Phase:   string(state.PhaseRunning),
+	}
+	require.NoError(t, s.CreateAgent(ctx, agent))
+
+	// Do NOT set a dispatcher — simulates server still starting up
+	rec := doRequest(t, srv, http.MethodPost, "/api/v1/agents/"+agent.ID+"/message", map[string]interface{}{
+		"message": "hello",
+	})
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	assert.Equal(t, "5", rec.Header().Get("Retry-After"))
+	assert.Contains(t, rec.Body.String(), "starting up")
+}
+
+// TestHandleAgentMessage_NoBrokerID_Returns503 verifies that sending a message
+// to an agent with no RuntimeBrokerID returns 503 with a Retry-After header.
+func TestHandleAgentMessage_NoBrokerID_Returns503(t *testing.T) {
+	srv, s := testServer(t)
+	ctx := context.Background()
+
+	grove := &store.Grove{
+		ID:   "grove-msg-503-nobroker",
+		Name: "Msg 503 NoBroker Grove",
+		Slug: "msg-503-nobroker-grove",
+	}
+	require.NoError(t, s.CreateGrove(ctx, grove))
+
+	agent := &store.Agent{
+		ID:      "agent-msg-503-nobroker",
+		Slug:    "agent-msg-503-nobroker",
+		Name:    "Msg 503 NoBroker Agent",
+		GroveID: grove.ID,
+		Phase:   string(state.PhaseRunning),
+		// No RuntimeBrokerID set
+	}
+	require.NoError(t, s.CreateAgent(ctx, agent))
+
+	disp := &recordingDispatcher{}
+	srv.SetDispatcher(disp)
+
+	rec := doRequest(t, srv, http.MethodPost, "/api/v1/agents/"+agent.ID+"/message", map[string]interface{}{
+		"message": "hello",
+	})
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	assert.Equal(t, "5", rec.Header().Get("Retry-After"))
+	assert.Contains(t, rec.Body.String(), "no runtime broker assigned")
+
+	// Verify no dispatch was attempted
+	assert.Len(t, disp.getCalls(), 0)
+}
+
 // TestCreateAgent_DispatchFailure_CleansUpBroker verifies that when the dispatch
 // to the runtime broker fails (e.g. auth resolution error), the hub dispatches a
 // delete with deleteFiles=true to clean up provisioned files on the broker, and

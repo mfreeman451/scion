@@ -1841,14 +1841,17 @@ func (s *Server) handleAgentMessage(w http.ResponseWriter, r *http.Request, id s
 	s.logMessage("message dispatched", logAttrs...)
 
 	// If a dispatcher is available, dispatch the message to the runtime broker
-	if dispatcher := s.GetDispatcher(); dispatcher != nil && agent.RuntimeBrokerID != "" {
-		if err := dispatcher.DispatchAgentMessage(ctx, agent, plainMessage, req.Interrupt, structuredMsg); err != nil {
-			RuntimeError(w, "Failed to send message to runtime broker: "+err.Error())
-			return
-		}
-	} else {
-		// No dispatcher available
-		RuntimeError(w, "No runtime broker dispatcher available for this agent")
+	dispatcher := s.GetDispatcher()
+	if dispatcher == nil {
+		ServiceNotReady(w, "Message dispatch is not available yet — the server may still be starting up")
+		return
+	}
+	if agent.RuntimeBrokerID == "" {
+		ServiceNotReady(w, "Agent has no runtime broker assigned — the server may still be starting up")
+		return
+	}
+	if err := dispatcher.DispatchAgentMessage(ctx, agent, plainMessage, req.Interrupt, structuredMsg); err != nil {
+		RuntimeError(w, "Failed to send message to runtime broker: "+err.Error())
 		return
 	}
 
@@ -1946,7 +1949,7 @@ func (s *Server) broadcastDirect(w http.ResponseWriter, r *http.Request, groveID
 	ctx := r.Context()
 	dispatcher := s.GetDispatcher()
 	if dispatcher == nil {
-		RuntimeError(w, "No runtime broker dispatcher available")
+		ServiceNotReady(w, "Message dispatch is not available yet — the server may still be starting up")
 		return
 	}
 
