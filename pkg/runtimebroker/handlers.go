@@ -1137,9 +1137,10 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request, id string) 
 	if req.StructuredMessage != nil {
 		logAttrs = append(logAttrs, req.StructuredMessage.LogAttrs()...)
 	}
-	s.messageLog.Info(logMsg, logAttrs...)
 	if s.dedicatedMessageLog != nil {
 		s.dedicatedMessageLog.Info(logMsg, logAttrs...)
+	} else {
+		s.messageLog.Info(logMsg, logAttrs...)
 	}
 
 	w.WriteHeader(http.StatusOK)
