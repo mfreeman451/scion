@@ -28,41 +28,6 @@ import (
 	"github.com/GoogleCloudPlatform/scion/pkg/util"
 )
 
-// sandboxPreserveKeys lists env var keys that Gemini CLI's sandbox mode
-// should preserve across re-launches (via SANDBOX_ENV).
-var sandboxPreserveKeys = []string{
-	"SCION_AGENT_ID",
-	"SCION_AGENT_NAME",
-	"SCION_AGENT_SLUG",
-	"SCION_AUTH_TOKEN",
-	"SCION_BROKER_ID",
-	"SCION_BROKER_NAME",
-	"SCION_CREATOR",
-	"SCION_DEBUG",
-	"SCION_GROVE",
-	"SCION_GROVE_ID",
-	"SCION_HARNESS",
-	"SCION_HOST_GID",
-	"SCION_HOST_UID",
-	"SCION_HUB_ENDPOINT",
-	"SCION_HUB_URL",
-	"SCION_MODEL",
-	"SCION_OTEL_ENDPOINT",
-	"SCION_OTEL_GCP_CREDENTIALS",
-	"SCION_OTEL_PROTOCOL",
-	"SCION_SHARED_WORKSPACE",
-	"SCION_TELEMETRY_CLOUD_ENABLED",
-	"SCION_TELEMETRY_CLOUD_PROVIDER",
-	"SCION_TELEMETRY_DEBUG",
-	"SCION_TELEMETRY_ENABLED",
-	"SCION_TELEMETRY_HUB_ENABLED",
-	"SCION_TELEMETRY_LOCAL_CONSOLE",
-	"SCION_TELEMETRY_LOCAL_ENABLED",
-	"SCION_TEMPLATE",
-	"SCION_TEMPLATE_NAME",
-	"GITHUB_TOKEN",
-}
-
 type GeminiCLI struct{}
 
 func (g *GeminiCLI) Name() string {
@@ -100,9 +65,6 @@ func (g *GeminiCLI) GetEnv(agentName string, agentHome string, unixUsername stri
 	// passed via docker run -e (SCION_AUTH_TOKEN, SCION_AGENT_NAME, etc.)
 	env["GEMINI_CLI_NO_RELAUNCH"] = "true"
 
-	// Tell Gemini CLI's sandbox to preserve scion env vars across restarts.
-	// SANDBOX_ENV is a comma-separated list of env var keys to keep.
-	env["SANDBOX_ENV"] = strings.Join(sandboxPreserveKeys, ",")
 	if relPath := g.getSystemPromptRelPath(agentHome); relPath != "" {
 		fullPath := fmt.Sprintf("%s/%s", util.GetHomeDir(unixUsername), relPath)
 		env["GEMINI_SYSTEM_MD"] = fullPath
