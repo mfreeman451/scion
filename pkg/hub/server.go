@@ -526,7 +526,7 @@ type Server struct {
 }
 
 // New creates a new Hub API server.
-func New(cfg ServerConfig, s store.Store) *Server {
+func New(cfg ServerConfig, s store.Store) (*Server, error) {
 	// Apply defaults for zero-value fields that have meaningful defaults.
 	defaults := DefaultServerConfig()
 	if cfg.StalledThreshold == 0 {
@@ -565,12 +565,17 @@ func New(cfg ServerConfig, s store.Store) *Server {
 
 	ctx := context.Background()
 
+	_, isGCPBackend := srv.secretBackend.(*secret.GCPBackend)
+
 	// Initialize agent token service
 	agentKey, err := srv.ensureSigningKey(ctx, SecretKeyAgentSigningKey, cfg.AgentTokenConfig.SigningKey)
-	if err == nil {
-		cfg.AgentTokenConfig.SigningKey = agentKey
+	if err != nil {
+		if isGCPBackend {
+			return nil, fmt.Errorf("agent signing key: %w", err)
+		}
+		logSigningKeyFailure("agent", err)
 	} else {
-		logSigningKeyFailure("agent", err, srv.secretBackend != nil)
+		cfg.AgentTokenConfig.SigningKey = agentKey
 	}
 	tokenService, err := NewAgentTokenService(cfg.AgentTokenConfig)
 	if err != nil {
@@ -583,10 +588,13 @@ func New(cfg ServerConfig, s store.Store) *Server {
 
 	// Initialize user token service
 	userKey, err := srv.ensureSigningKey(ctx, SecretKeyUserSigningKey, cfg.UserTokenConfig.SigningKey)
-	if err == nil {
-		cfg.UserTokenConfig.SigningKey = userKey
+	if err != nil {
+		if isGCPBackend {
+			return nil, fmt.Errorf("user signing key: %w", err)
+		}
+		logSigningKeyFailure("user", err)
 	} else {
-		logSigningKeyFailure("user", err, srv.secretBackend != nil)
+		cfg.UserTokenConfig.SigningKey = userKey
 	}
 	userTokenService, err := NewUserTokenService(cfg.UserTokenConfig)
 	if err != nil {
@@ -706,7 +714,7 @@ func New(cfg ServerConfig, s store.Store) *Server {
 
 	srv.registerRoutes()
 
-	return srv
+	return srv, nil
 }
 
 // ensureSigningKey ensures a signing key exists, loading it if it does
@@ -722,9 +730,11 @@ func (s *Server) ensureSigningKey(ctx context.Context, keyName string, existingK
 	}
 
 	hubID := s.hubID
+	hasSecretBackend := s.secretBackend != nil
+	_, isGCPBackend := s.secretBackend.(*secret.GCPBackend)
 
 	// Try to load from the secret backend if configured
-	if s.secretBackend != nil {
+	if hasSecretBackend {
 		sv, err := s.secretBackend.Get(ctx, keyName, store.ScopeHub, hubID)
 		if err == nil {
 			slog.Info("Loaded existing signing key from secret backend", "key", keyName)
@@ -736,7 +746,7 @@ func (s *Server) ensureSigningKey(ctx context.Context, keyName string, existingK
 			// even if the secret backend becomes unavailable. This also covers
 			// the case where GCPBackend.Get recovered the key directly from
 			// GCP SM without a pre-existing SQLite metadata record.
-			if persistErr := s.persistSigningKey(ctx, keyName, sv.Value, hubID); persistErr != nil {
+			if persistErr := s.backupSigningKeyToStore(ctx, keyName, sv.Value, hubID); persistErr != nil {
 				slog.Warn("Failed to persist signing key backup to store after loading from backend", "key", keyName, "error", persistErr)
 			}
 			return key, nil
@@ -765,27 +775,8 @@ func (s *Server) ensureSigningKey(ctx context.Context, keyName string, existingK
 				return nil, fmt.Errorf("signing key %s decoded to empty value", keyName)
 			}
 			// Sync to secret backend so future restarts load from the authoritative source.
-			if s.secretBackend != nil {
-				input := &secret.SetSecretInput{
-					Name:        keyName,
-					Value:       val,
-					SecretType:  store.SecretTypeInternal,
-					Scope:       store.ScopeHub,
-					ScopeID:     hubID,
-					Description: fmt.Sprintf("Hub signing key for %s (synced from store)", keyName),
-				}
-				if _, _, syncErr := s.secretBackend.Set(ctx, input); syncErr == nil {
-					slog.Info("Synced signing key from store to secret backend", "key", keyName)
-				} else {
-					slog.Warn("Failed to sync signing key to secret backend", "key", keyName, "error", syncErr)
-				}
-				// Re-persist the actual value to SQLite. The backend's Set() stores
-				// EncryptedValue="" (using a SecretRef), which would leave SQLite
-				// without the key material. Keep a local backup so the key survives
-				// even if the secret backend becomes unavailable.
-				if persistErr := s.persistSigningKey(ctx, keyName, val, hubID); persistErr != nil {
-					slog.Warn("Failed to re-persist signing key backup to store after sync", "key", keyName, "error", persistErr)
-				}
+			if err := s.syncSigningKeyToBackend(ctx, keyName, val, hubID, isGCPBackend); err != nil {
+				return nil, err
 			}
 			return key, nil
 		}
@@ -815,17 +806,16 @@ func (s *Server) ensureSigningKey(ctx context.Context, keyName string, existingK
 			if delErr := s.store.DeleteSecret(ctx, keyName, store.ScopeHub, legacyScopeID); delErr != nil {
 				slog.Warn("Failed to delete legacy signing key record", "key", keyName, "legacyScopeID", legacyScopeID, "error", delErr)
 			}
-			// Re-save under the current hub ID so lookups and listings find it
-			if err := s.persistSigningKey(ctx, keyName, val, hubID); err != nil {
-				slog.Warn("Failed to migrate signing key to new hub ID", "key", keyName, "error", err)
-			} else {
-				slog.Info("Migrated signing key to new hub ID scope", "key", keyName, "hubID", hubID)
+			// Sync to secret backend (and persist to store under current hub ID).
+			if err := s.syncSigningKeyToBackend(ctx, keyName, val, hubID, isGCPBackend); err != nil {
+				return nil, err
 			}
 			return key, nil
 		}
 	}
 
 	// Not found anywhere, generate a new one
+	slog.Warn("Signing key not found in any source, generating new key", "key", keyName)
 	newKey := make([]byte, 32)
 	if _, err := rand.Read(newKey); err != nil {
 		return nil, fmt.Errorf("failed to generate random signing key: %w", err)
@@ -833,8 +823,8 @@ func (s *Server) ensureSigningKey(ctx context.Context, keyName string, existingK
 
 	encodedKey := base64.StdEncoding.EncodeToString(newKey)
 
-	// Try saving through the secret backend first
-	if s.secretBackend != nil {
+	// Save through the secret backend first
+	if hasSecretBackend {
 		input := &secret.SetSecretInput{
 			Name:        keyName,
 			Value:       encodedKey,
@@ -843,22 +833,23 @@ func (s *Server) ensureSigningKey(ctx context.Context, keyName string, existingK
 			ScopeID:     hubID,
 			Description: fmt.Sprintf("Hub signing key for %s", keyName),
 		}
-		if _, _, err := s.secretBackend.Set(ctx, input); err == nil {
+		if _, _, err := s.secretBackend.Set(ctx, input); err != nil {
+			if isGCPBackend {
+				return nil, fmt.Errorf("failed to persist signing key %s to Secret Manager: %w", keyName, err)
+			}
+			slog.Warn("Secret backend unavailable for signing key, falling back to store", "key", keyName, "error", err)
+		} else {
 			slog.Info("Persisted new signing key via secret backend", "key", keyName)
-			// Also persist to SQLite as backup. The backend's Set() stores
-			// EncryptedValue="" (using a SecretRef), so without this the key
-			// material would be lost if the secret backend becomes unavailable.
-			if persistErr := s.persistSigningKey(ctx, keyName, encodedKey, hubID); persistErr != nil {
+			// Also persist to SQLite as backup (value only, preserving SecretRef from Set).
+			if persistErr := s.backupSigningKeyToStore(ctx, keyName, encodedKey, hubID); persistErr != nil {
 				slog.Warn("Failed to persist signing key backup to store", "key", keyName, "error", persistErr)
 			}
 			return newKey, nil
-		} else {
-			slog.Warn("Secret backend unavailable for signing key, falling back to store", "key", keyName, "error", err)
 		}
 	}
 
-	// Fallback: save directly to the store (hub-internal key, acceptable for local dev)
-	if err := s.persistSigningKey(ctx, keyName, encodedKey, hubID); err != nil {
+	// Fallback: save directly to the store (acceptable only for local dev without SM)
+	if err := s.backupSigningKeyToStore(ctx, keyName, encodedKey, hubID); err != nil {
 		slog.Warn("Failed to persist signing key", "key", keyName, "error", err)
 	} else {
 		slog.Info("Persisted new signing key to store", "key", keyName)
@@ -867,20 +858,60 @@ func (s *Server) ensureSigningKey(ctx context.Context, keyName string, existingK
 	return newKey, nil
 }
 
-// logSigningKeyFailure logs a signing key loading failure at the appropriate level.
-// When a secret backend is configured (production), this is an ERROR because
-// ephemeral keys will invalidate all tokens on the next restart.
-func logSigningKeyFailure(keyType string, err error, hasSecretBackend bool) {
-	if hasSecretBackend {
-		slog.Error("Failed to load signing key — using ephemeral key that will NOT survive restart",
-			"key_type", keyType, "error", err)
-	} else {
-		slog.Warn("Failed to load signing key, will use ephemeral key", "key_type", keyType, "error", err)
+// syncSigningKeyToBackend syncs a signing key (found in SQLite) to the secret backend
+// and maintains a local SQLite backup. When isGCPBackend is true, a sync failure is
+// treated as a fatal error since the key would not survive a database reset.
+func (s *Server) syncSigningKeyToBackend(ctx context.Context, keyName, encodedValue, hubID string, isGCPBackend bool) error {
+	if s.secretBackend == nil {
+		return nil
 	}
+	input := &secret.SetSecretInput{
+		Name:        keyName,
+		Value:       encodedValue,
+		SecretType:  store.SecretTypeInternal,
+		Scope:       store.ScopeHub,
+		ScopeID:     hubID,
+		Description: fmt.Sprintf("Hub signing key for %s (synced from store)", keyName),
+	}
+	if _, _, syncErr := s.secretBackend.Set(ctx, input); syncErr != nil {
+		if isGCPBackend {
+			return fmt.Errorf("failed to sync signing key %s to Secret Manager: %w", keyName, syncErr)
+		}
+		slog.Warn("Failed to sync signing key to secret backend", "key", keyName, "error", syncErr)
+	} else {
+		slog.Info("Synced signing key to secret backend", "key", keyName)
+	}
+	// Re-persist the actual value to SQLite as backup. The backend's Set() stores
+	// EncryptedValue="" (using a SecretRef), so without this the key material
+	// would be lost if the secret backend becomes unavailable.
+	if persistErr := s.backupSigningKeyToStore(ctx, keyName, encodedValue, hubID); persistErr != nil {
+		slog.Warn("Failed to re-persist signing key backup to store after sync", "key", keyName, "error", persistErr)
+	}
+	return nil
 }
 
-// persistSigningKey saves a signing key to the store with an ID scoped to the hub instance.
-func (s *Server) persistSigningKey(ctx context.Context, keyName, encodedValue, hubID string) error {
+// logSigningKeyFailure logs a signing key loading failure for non-production
+// (local/dev) deployments. When GCPBackend is configured, signing key failures
+// are fatal and returned as errors from New() instead of reaching this function.
+func logSigningKeyFailure(keyType string, err error) {
+	slog.Warn("Failed to load signing key, will use ephemeral key (local dev only)", "key_type", keyType, "error", err)
+}
+
+// backupSigningKeyToStore saves a signing key value to SQLite as a local backup.
+// If a record already exists (e.g. with a SecretRef from GCPBackend.Set), only the
+// EncryptedValue is updated — the SecretRef is preserved so the UI and other consumers
+// can see that the secret is backed by Secret Manager.
+func (s *Server) backupSigningKeyToStore(ctx context.Context, keyName, encodedValue, hubID string) error {
+	existing, err := s.store.GetSecret(ctx, keyName, store.ScopeHub, hubID)
+	if err == nil {
+		// Record exists — update value only, preserving SecretRef and other metadata.
+		existing.EncryptedValue = encodedValue
+		return s.store.UpdateSecret(ctx, existing)
+	}
+	if err != store.ErrNotFound {
+		return fmt.Errorf("checking existing secret record: %w", err)
+	}
+	// No existing record — create a new one.
 	sec := &store.Secret{
 		ID:             signingKeySecretID(keyName, hubID),
 		Key:            keyName,
@@ -890,7 +921,7 @@ func (s *Server) persistSigningKey(ctx context.Context, keyName, encodedValue, h
 		SecretType:     store.SecretTypeInternal,
 		Description:    fmt.Sprintf("Hub signing key for %s", keyName),
 	}
-	_, err := s.store.UpsertSecret(ctx, sec)
+	_, err = s.store.UpsertSecret(ctx, sec)
 	return err
 }
 

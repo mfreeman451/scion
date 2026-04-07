@@ -19,13 +19,18 @@ package hub
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	smpb "cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
 	"github.com/GoogleCloudPlatform/scion/pkg/secret"
 	"github.com/GoogleCloudPlatform/scion/pkg/store"
 	"github.com/GoogleCloudPlatform/scion/pkg/store/sqlite"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestServer_PersistentSigningKeys(t *testing.T) {
@@ -42,7 +47,10 @@ func TestServer_PersistentSigningKeys(t *testing.T) {
 	cfg := DefaultServerConfig()
 
 	// Create first server
-	srv1 := New(cfg, s)
+	srv1, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv1.Shutdown(context.Background()) })
 	if srv1.agentTokenService == nil {
 		t.Fatal("agentTokenService not initialized in srv1")
@@ -55,7 +63,10 @@ func TestServer_PersistentSigningKeys(t *testing.T) {
 	userKey1 := srv1.userTokenService.config.SigningKey
 
 	// Create second server with the same store
-	srv2 := New(cfg, s)
+	srv2, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv2.Shutdown(context.Background()) })
 	if srv2.agentTokenService == nil {
 		t.Fatal("agentTokenService not initialized in srv2")
@@ -88,7 +99,10 @@ func TestServer_PersistentSigningKeys_WithHubID(t *testing.T) {
 	cfg := DefaultServerConfig()
 	cfg.HubID = "test-hub-123"
 
-	srv1 := New(cfg, s)
+	srv1, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv1.Shutdown(context.Background()) })
 	if srv1.agentTokenService == nil {
 		t.Fatal("agentTokenService not initialized")
@@ -98,7 +112,10 @@ func TestServer_PersistentSigningKeys_WithHubID(t *testing.T) {
 	userKey1 := srv1.userTokenService.config.SigningKey
 
 	// Second server with same hubID should get the same keys
-	srv2 := New(cfg, s)
+	srv2, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv2.Shutdown(context.Background()) })
 
 	if string(key1) != string(srv2.agentTokenService.config.SigningKey) {
@@ -148,7 +165,10 @@ func TestServer_SigningKeysExcludedFromResolve(t *testing.T) {
 	cfg := DefaultServerConfig()
 	cfg.HubID = "test-hub-resolve"
 
-	srv := New(cfg, s)
+	srv, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	// Resolve secrets as if dispatching an agent — signing keys must not appear.
@@ -180,7 +200,10 @@ func TestServer_UserTokenSurvivesRestart(t *testing.T) {
 	cfg.HubID = "test-hub-456"
 
 	// Run 1: create server, generate a user token
-	srv1 := New(cfg, s)
+	srv1, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv1.Shutdown(context.Background()) })
 	if srv1.userTokenService == nil {
 		t.Fatal("userTokenService not initialized")
@@ -211,7 +234,10 @@ func TestServer_UserTokenSurvivesRestart(t *testing.T) {
 	}
 
 	// Run 2: create a NEW server with the reopened store
-	srv2 := New(cfg, s2)
+	srv2, err := New(cfg, s2)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv2.Shutdown(context.Background()) })
 	if srv2.userTokenService == nil {
 		t.Fatal("userTokenService not initialized on srv2")
@@ -274,7 +300,10 @@ func TestServer_SigningKeyMigration_LegacyHubScopeID(t *testing.T) {
 	// Now create a server with an actual hubID — it should migrate from "hub"
 	cfg := DefaultServerConfig()
 	cfg.HubID = "my-new-hub-id"
-	srv := New(cfg, s)
+	srv, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	if string(legacyAgentKey) != string(srv.agentTokenService.config.SigningKey) {
@@ -332,7 +361,10 @@ func TestServer_SigningKeyBootstrapWithSecretBackend(t *testing.T) {
 	cfg.SecretBackend = backend
 
 	// Run 1: keys generated and stored
-	srv1 := New(cfg, s)
+	srv1, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv1.Shutdown(context.Background()) })
 	if srv1.userTokenService == nil {
 		t.Fatal("userTokenService not initialized")
@@ -359,7 +391,10 @@ func TestServer_SigningKeyBootstrapWithSecretBackend(t *testing.T) {
 	}
 
 	// Run 2: create new server — key should be loaded from backend
-	srv2 := New(cfg, s)
+	srv2, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv2.Shutdown(context.Background()) })
 
 	key2 := srv2.userTokenService.config.SigningKey
@@ -393,14 +428,20 @@ func TestServer_SigningKeySyncFromStoreToBackend(t *testing.T) {
 	// Run 1: No secret backend — keys go to SQLite only
 	cfg := DefaultServerConfig()
 	cfg.HubID = hubID
-	srv1 := New(cfg, s)
+	srv1, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv1.Shutdown(context.Background()) })
 	key1 := srv1.userTokenService.config.SigningKey
 
 	// Run 2: Secret backend configured — keys should sync from SQLite to backend
 	backend := secret.NewLocalBackend(s, hubID)
 	cfg.SecretBackend = backend
-	srv2 := New(cfg, s)
+	srv2, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv2.Shutdown(context.Background()) })
 	key2 := srv2.userTokenService.config.SigningKey
 
@@ -456,7 +497,10 @@ func TestServer_SigningKeyEmptyValueFromStore(t *testing.T) {
 	// Create server WITHOUT a secret backend (simulates backend unavailable)
 	cfg := DefaultServerConfig()
 	cfg.HubID = hubID
-	srv := New(cfg, s)
+	srv, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	if srv.userTokenService == nil {
@@ -506,7 +550,10 @@ func TestServer_SigningKeyBackupAfterBackendSet(t *testing.T) {
 	cfg.SecretBackend = backend
 
 	// Create server — generates new keys via backend
-	srv := New(cfg, s)
+	srv, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	key := srv.userTokenService.config.SigningKey
@@ -546,7 +593,10 @@ func TestServer_GenerateAgentToken_DevAuthAutoGrantsScopes(t *testing.T) {
 		TokenDuration: time.Hour,
 	}
 
-	srv := New(cfg, s)
+	srv, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	// Generate token without any additional scopes
@@ -591,7 +641,10 @@ func TestServer_GenerateAgentToken_DevAuthDeduplicatesScopes(t *testing.T) {
 		TokenDuration: time.Hour,
 	}
 
-	srv := New(cfg, s)
+	srv, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	// Generate token with explicit scopes that overlap with auto-granted ones
@@ -639,7 +692,10 @@ func TestServer_GenerateAgentToken_NoDevAuthDoesNotAutoGrant(t *testing.T) {
 		TokenDuration: time.Hour,
 	}
 
-	srv := New(cfg, s)
+	srv, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	token, err := srv.GenerateAgentToken("agent-1", "grove-1", nil)
@@ -663,5 +719,101 @@ func TestServer_GenerateAgentToken_NoDevAuthDoesNotAutoGrant(t *testing.T) {
 	}
 	if claims.HasScope(ScopeAgentLifecycle) {
 		t.Error("expected ScopeAgentLifecycle NOT to be auto-granted without dev-auth")
+	}
+}
+
+// failingSMClient is a mock GCP SM client that fails all operations.
+type failingSMClient struct{}
+
+func (f *failingSMClient) CreateSecret(_ context.Context, req *smpb.CreateSecretRequest) (*smpb.Secret, error) {
+	return nil, fmt.Errorf("simulated GCP SM unavailable")
+}
+
+func (f *failingSMClient) AddSecretVersion(_ context.Context, _ *smpb.AddSecretVersionRequest) (*smpb.SecretVersion, error) {
+	return nil, fmt.Errorf("simulated GCP SM unavailable")
+}
+
+func (f *failingSMClient) AccessSecretVersion(_ context.Context, req *smpb.AccessSecretVersionRequest) (*smpb.AccessSecretVersionResponse, error) {
+	return nil, status.Errorf(codes.NotFound, "secret not found: %s", req.Name)
+}
+
+func (f *failingSMClient) DeleteSecret(_ context.Context, _ *smpb.DeleteSecretRequest) error {
+	return fmt.Errorf("simulated GCP SM unavailable")
+}
+
+func (f *failingSMClient) GetSecret(_ context.Context, req *smpb.GetSecretRequest) (*smpb.Secret, error) {
+	return nil, status.Errorf(codes.NotFound, "secret not found: %s", req.Name)
+}
+
+func (f *failingSMClient) Close() error { return nil }
+
+func TestServer_GCPBackendFailureIsFatal(t *testing.T) {
+	// When GCPBackend is configured but GCP SM is unavailable, hub.New() should
+	// return an error rather than silently generating an ephemeral key.
+	s, err := sqlite.New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create test store: %v", err)
+	}
+	if err := s.Migrate(context.Background()); err != nil {
+		t.Fatalf("failed to migrate test store: %v", err)
+	}
+
+	hubID := "test-gcpfail-hub"
+	backend := secret.NewGCPBackendWithClient(s, &failingSMClient{}, "test-project", hubID)
+
+	cfg := DefaultServerConfig()
+	cfg.HubID = hubID
+	cfg.SecretBackend = backend
+
+	_, err = New(cfg, s)
+	if err == nil {
+		t.Fatal("expected New() to return error when GCPBackend fails to store signing key")
+	}
+	if !strings.Contains(err.Error(), "Secret Manager") {
+		t.Errorf("error should mention Secret Manager, got: %v", err)
+	}
+}
+
+func TestServer_SigningKeyBackupPreservesSecretRef(t *testing.T) {
+	// Verify that after loading a signing key from the secret backend and
+	// backing it up to SQLite, the SecretRef is preserved so the UI shows
+	// the secret as SM-backed.
+	s, err := sqlite.New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create test store: %v", err)
+	}
+	if err := s.Migrate(context.Background()); err != nil {
+		t.Fatalf("failed to migrate test store: %v", err)
+	}
+
+	hubID := "test-ref-hub"
+	backend := secret.NewLocalBackend(s, hubID)
+
+	cfg := DefaultServerConfig()
+	cfg.HubID = hubID
+	cfg.SecretBackend = backend
+
+	// Run 1: generate keys (stores via backend)
+	srv1, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	t.Cleanup(func() { srv1.Shutdown(context.Background()) })
+
+	// Run 2: load keys from backend (triggers backupSigningKeyToStore)
+	srv2, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	t.Cleanup(func() { srv2.Shutdown(context.Background()) })
+
+	// Check that the SQLite record still has the key value (backup)
+	ctx := context.Background()
+	val, err := s.GetSecretValue(ctx, SecretKeyUserSigningKey, store.ScopeHub, hubID)
+	if err != nil {
+		t.Fatalf("GetSecretValue failed: %v", err)
+	}
+	if val == "" {
+		t.Error("signing key backup in SQLite should not be empty after loading from backend")
 	}
 }

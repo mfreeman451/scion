@@ -356,7 +356,10 @@ func TestNew_DefaultsStalledThresholdWhenZero(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 
 	// Create server with zero StalledThreshold (simulates cmd/server.go omission)
-	srv := New(ServerConfig{}, s)
+	srv, err := New(ServerConfig{}, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	if srv.config.StalledThreshold != 5*time.Minute {
 		t.Errorf("StalledThreshold = %v, want %v", srv.config.StalledThreshold, 5*time.Minute)
 	}

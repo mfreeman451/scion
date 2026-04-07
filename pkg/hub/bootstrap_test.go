@@ -168,7 +168,10 @@ func testBootstrapServer(t *testing.T) (*Server, store.Store, *mockStorage, *moc
 
 	cfg := DefaultServerConfig()
 	cfg.DevAuthToken = testBootstrapDevToken
-	srv := New(cfg, s)
+	srv, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	t.Cleanup(func() { srv.Shutdown(context.Background()) })
 
 	stor := newMockStorage("test-bucket")
@@ -390,7 +393,10 @@ func TestCreateAgentWithWorkspaceBootstrap_NoStorage(t *testing.T) {
 
 	cfg := DefaultServerConfig()
 	cfg.DevAuthToken = testBootstrapDevToken
-	srv := New(cfg, s)
+	srv, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 	// No storage set
 
 	groveID, _ := setupGroveAndBroker(t, s)
@@ -855,7 +861,10 @@ func TestSyncToFinalize_BootstrapMode_NoDispatcher(t *testing.T) {
 
 	cfg := DefaultServerConfig()
 	cfg.DevAuthToken = testBootstrapDevToken
-	srv := New(cfg, s)
+	srv, err := New(cfg, s)
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
 
 	stor := newMockStorage("test-bucket")
 	srv.SetStorage(stor)

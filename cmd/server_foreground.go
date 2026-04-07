@@ -223,7 +223,11 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 			log.Printf("Warning: failed to initialize secret backend: %v", sbErr)
 		}
 
-		hubSrv = initHubServer(ctx, cfg, s, hubEndpoint, devAuthToken, adminEmailList, adminMode, maintenanceMessage, requestLogger, messageLogger, globalDir, pluginMgr, secretBackend)
+		var hubInitErr error
+		hubSrv, hubInitErr = initHubServer(ctx, cfg, s, hubEndpoint, devAuthToken, adminEmailList, adminMode, maintenanceMessage, requestLogger, messageLogger, globalDir, pluginMgr, secretBackend)
+		if hubInitErr != nil {
+			log.Fatalf("Hub server failed to start: %v", hubInitErr)
+		}
 
 		if !enableWeb {
 			// Hub runs its own HTTP server (standalone mode).
@@ -618,7 +622,7 @@ func parseAdminEmails(cfg *config.GlobalConfig) []string {
 }
 
 // initHubServer creates and configures the Hub server.
-func initHubServer(ctx context.Context, cfg *config.GlobalConfig, s store.Store, hubEndpoint, devAuthToken string, adminEmailList []string, adminMode bool, maintenanceMessage string, requestLogger, messageLogger *slog.Logger, globalDir string, pluginMgr *scionplugin.Manager, secretBackend secret.SecretBackend) *hub.Server {
+func initHubServer(ctx context.Context, cfg *config.GlobalConfig, s store.Store, hubEndpoint, devAuthToken string, adminEmailList []string, adminMode bool, maintenanceMessage string, requestLogger, messageLogger *slog.Logger, globalDir string, pluginMgr *scionplugin.Manager, secretBackend secret.SecretBackend) (*hub.Server, error) {
 	hubCfg := hub.ServerConfig{
 		HubID:                 cfg.Hub.ResolveHubID(),
 		Port:                  cfg.Hub.Port,
@@ -688,7 +692,10 @@ func initHubServer(ctx context.Context, cfg *config.GlobalConfig, s store.Store,
 		GCPProjectID:      cfg.Hub.GCPProjectID,
 	}
 
-	hubSrv := hub.New(hubCfg, s)
+	hubSrv, err := hub.New(hubCfg, s)
+	if err != nil {
+		return nil, fmt.Errorf("hub server initialization failed: %w", err)
+	}
 	hubSrv.SetRequestLogger(requestLogger)
 	if messageLogger != nil {
 		hubSrv.SetMessageLogger(messageLogger)
@@ -798,7 +805,7 @@ func initHubServer(ctx context.Context, cfg *config.GlobalConfig, s store.Store,
 
 	log.Printf("Database: %s (%s)", cfg.Database.Driver, cfg.Database.URL)
 
-	return hubSrv
+	return hubSrv, nil
 }
 
 // initHubStorage initializes the storage backend for the Hub server.
