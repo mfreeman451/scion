@@ -7,6 +7,8 @@ package telemetry
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"os"
 
@@ -25,6 +27,27 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/credentials/oauth"
 )
+
+var errOTLPCACertsNotFound = errors.New("parsing OTLP CA file: no certificates found")
+
+func loadOTLPTLSConfig(caFile string) (*tls.Config, error) {
+	tlsConfig := &tls.Config{}
+	if caFile == "" {
+		return tlsConfig, nil
+	}
+
+	pemBytes, err := os.ReadFile(caFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading OTLP CA file: %w", err)
+	}
+
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(pemBytes) {
+		return nil, errOTLPCACertsNotFound
+	}
+	tlsConfig.RootCAs = roots
+	return tlsConfig, nil
+}
 
 // loadGCPDialOptions loads GCP credentials from a service account key file
 // and returns gRPC dial options for per-RPC authentication. Returns (nil, nil)
@@ -127,6 +150,12 @@ func (e *CloudExporter) initGRPC(config *Config) error {
 
 	if config.Insecure {
 		opts = append(opts, otlptracegrpc.WithInsecure())
+	} else {
+		tlsConfig, err := loadOTLPTLSConfig(config.CAFile)
+		if err != nil {
+			return fmt.Errorf("failed to load OTLP TLS config: %w", err)
+		}
+		opts = append(opts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(tlsConfig)))
 	}
 
 	for _, do := range gcpDialOpts {
@@ -145,7 +174,11 @@ func (e *CloudExporter) initGRPC(config *Config) error {
 	if config.Insecure {
 		connOpts = append(connOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	} else {
-		connOpts = append(connOpts, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})))
+		tlsConfig, err := loadOTLPTLSConfig(config.CAFile)
+		if err != nil {
+			return fmt.Errorf("failed to load OTLP TLS config: %w", err)
+		}
+		connOpts = append(connOpts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 	}
 	connOpts = append(connOpts, gcpDialOpts...)
 
@@ -171,6 +204,12 @@ func (e *CloudExporter) initHTTP(config *Config) error {
 
 	if config.Insecure {
 		opts = append(opts, otlptracehttp.WithInsecure())
+	} else {
+		tlsConfig, err := loadOTLPTLSConfig(config.CAFile)
+		if err != nil {
+			return fmt.Errorf("failed to load OTLP TLS config: %w", err)
+		}
+		opts = append(opts, otlptracehttp.WithTLSClientConfig(tlsConfig))
 	}
 
 	traceExp, err := otlptracehttp.New(context.Background(), opts...)

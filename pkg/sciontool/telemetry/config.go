@@ -26,6 +26,8 @@ const (
 	EnvProtocol = "SCION_OTEL_PROTOCOL"
 	// EnvInsecure controls whether TLS verification is skipped.
 	EnvInsecure = "SCION_OTEL_INSECURE"
+	// EnvCAFile is the path to a PEM-encoded CA bundle for OTLP TLS.
+	EnvCAFile = "SCION_OTEL_CA_FILE"
 	// EnvGRPCPort is the local gRPC receiver port.
 	EnvGRPCPort = "SCION_OTEL_GRPC_PORT"
 	// EnvHTTPPort is the local HTTP receiver port.
@@ -77,6 +79,8 @@ type Config struct {
 	Protocol string
 	// Insecure skips TLS verification if true.
 	Insecure bool
+	// CAFile is the path to a PEM-encoded CA bundle for OTLP TLS.
+	CAFile string
 	// GRPCPort is the local gRPC receiver port.
 	GRPCPort int
 	// HTTPPort is the local HTTP receiver port.
@@ -117,6 +121,7 @@ func LoadConfig() *Config {
 		Endpoint:     os.Getenv(EnvEndpoint),
 		Protocol:     getEnvOrDefault(EnvProtocol, DefaultProtocol),
 		Insecure:     parseBoolEnv(EnvInsecure, false),
+		CAFile:       os.Getenv(EnvCAFile),
 		GRPCPort:     parseIntEnv(EnvGRPCPort, DefaultGRPCPort),
 		HTTPPort:     parseIntEnv(EnvHTTPPort, DefaultHTTPPort),
 		ProjectID:    os.Getenv(EnvProjectID),

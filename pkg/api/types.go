@@ -255,8 +255,9 @@ type TelemetryCloudConfig struct {
 
 // TelemetryTLS holds TLS settings for OTLP export.
 type TelemetryTLS struct {
-	Enabled            *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
-	InsecureSkipVerify *bool `json:"insecure_skip_verify,omitempty" yaml:"insecure_skip_verify,omitempty"`
+	Enabled            *bool  `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+	InsecureSkipVerify *bool  `json:"insecure_skip_verify,omitempty" yaml:"insecure_skip_verify,omitempty"`
+	CAFile             string `json:"ca_file,omitempty" yaml:"ca_file,omitempty"`
 }
 
 // TelemetryBatch holds batch export settings.

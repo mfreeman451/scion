@@ -47,6 +47,7 @@ func ConvertV1TelemetryToAPI(v1 *V1TelemetryConfig) *api.TelemetryConfig {
 			result.Cloud.TLS = &api.TelemetryTLS{
 				Enabled:            v1.Cloud.TLS.Enabled,
 				InsecureSkipVerify: v1.Cloud.TLS.InsecureSkipVerify,
+				CAFile:             v1.Cloud.TLS.CAFile,
 			}
 		}
 		if v1.Cloud.Batch != nil {
@@ -133,6 +134,9 @@ func TelemetryConfigToEnv(cfg *api.TelemetryConfig) map[string]string {
 		}
 		if cfg.Cloud.TLS != nil && cfg.Cloud.TLS.InsecureSkipVerify != nil {
 			env["SCION_OTEL_INSECURE"] = strconv.FormatBool(*cfg.Cloud.TLS.InsecureSkipVerify)
+		}
+		if cfg.Cloud.TLS != nil && cfg.Cloud.TLS.CAFile != "" {
+			env["SCION_OTEL_CA_FILE"] = cfg.Cloud.TLS.CAFile
 		}
 		if cfg.Cloud.Batch != nil {
 			if cfg.Cloud.Batch.MaxSize > 0 {

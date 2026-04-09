@@ -1075,6 +1075,7 @@ func TestMergeScionConfigTelemetry(t *testing.T) {
 					TLS: &api.TelemetryTLS{
 						Enabled:            boolP(true),
 						InsecureSkipVerify: boolP(false),
+						CAFile:             "/etc/ssl/certs/base-root.pem",
 					},
 					Batch: &api.TelemetryBatch{
 						MaxSize: 512,
@@ -1109,6 +1110,7 @@ func TestMergeScionConfigTelemetry(t *testing.T) {
 					Endpoint: "https://override.example.com",
 					TLS: &api.TelemetryTLS{
 						InsecureSkipVerify: boolP(true),
+						CAFile:             "/etc/ssl/certs/override-root.pem",
 					},
 					Batch: &api.TelemetryBatch{
 						MaxSize: 256,
@@ -1156,6 +1158,9 @@ func TestMergeScionConfigTelemetry(t *testing.T) {
 		}
 		if got.Telemetry.Cloud.TLS.InsecureSkipVerify == nil || *got.Telemetry.Cloud.TLS.InsecureSkipVerify != true {
 			t.Errorf("expected InsecureSkipVerify=true overridden")
+		}
+		if got.Telemetry.Cloud.TLS.CAFile != "/etc/ssl/certs/override-root.pem" {
+			t.Errorf("expected CAFile override preserved, got %q", got.Telemetry.Cloud.TLS.CAFile)
 		}
 		// Batch max_size overridden, timeout preserved
 		if got.Telemetry.Cloud.Batch.MaxSize != 256 {

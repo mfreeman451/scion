@@ -2915,6 +2915,7 @@ telemetry:
     tls:
       enabled: true
       insecure_skip_verify: false
+      ca_file: "/etc/ssl/certs/custom-root.pem"
     batch:
       max_size: 256
       timeout: "10s"
@@ -2971,6 +2972,7 @@ telemetry:
 	assert.True(t, *vs.Telemetry.Cloud.TLS.Enabled)
 	require.NotNil(t, vs.Telemetry.Cloud.TLS.InsecureSkipVerify)
 	assert.False(t, *vs.Telemetry.Cloud.TLS.InsecureSkipVerify)
+	assert.Equal(t, "/etc/ssl/certs/custom-root.pem", vs.Telemetry.Cloud.TLS.CAFile)
 
 	require.NotNil(t, vs.Telemetry.Cloud.Batch)
 	assert.Equal(t, 256, vs.Telemetry.Cloud.Batch.MaxSize)
@@ -3142,6 +3144,7 @@ func TestVersionedEnvKeyMapper_Telemetry(t *testing.T) {
 		{"SCION_OTEL_PROTOCOL", "telemetry.cloud.protocol"},
 		{"SCION_OTEL_HEADERS", "telemetry.cloud.headers"},
 		{"SCION_OTEL_INSECURE", "telemetry.cloud.tls.insecure_skip_verify"},
+		{"SCION_OTEL_CA_FILE", "telemetry.cloud.tls.ca_file"},
 	}
 
 	for _, tt := range tests {

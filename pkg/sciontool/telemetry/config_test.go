@@ -34,6 +34,9 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.Insecure {
 		t.Error("Expected Insecure to be false by default")
 	}
+	if cfg.CAFile != "" {
+		t.Errorf("Expected CAFile to be empty by default, got %q", cfg.CAFile)
+	}
 	if cfg.MetricsDebug {
 		t.Error("Expected MetricsDebug to be false by default")
 	}
@@ -51,6 +54,9 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 	os.Setenv(EnvEndpoint, "otel.example.com:443")
 	os.Setenv(EnvProtocol, "http")
 	os.Setenv(EnvInsecure, "true")
+	if err := os.Setenv(EnvCAFile, "/etc/ssl/certs/custom-root.pem"); err != nil {
+		t.Fatalf("failed to set %s: %v", EnvCAFile, err)
+	}
 	os.Setenv(EnvGRPCPort, "14317")
 	os.Setenv(EnvHTTPPort, "14318")
 	os.Setenv(EnvProjectID, "my-project")
@@ -75,6 +81,9 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 	}
 	if !cfg.Insecure {
 		t.Error("Expected Insecure to be true")
+	}
+	if cfg.CAFile != "/etc/ssl/certs/custom-root.pem" {
+		t.Errorf("Expected CAFile to be '/etc/ssl/certs/custom-root.pem', got %q", cfg.CAFile)
 	}
 	if cfg.GRPCPort != 14317 {
 		t.Errorf("Expected GRPCPort to be 14317, got %d", cfg.GRPCPort)
@@ -556,6 +565,9 @@ func clearTelemetryEnv() {
 	os.Unsetenv(EnvEndpoint)
 	os.Unsetenv(EnvProtocol)
 	os.Unsetenv(EnvInsecure)
+	if err := os.Unsetenv(EnvCAFile); err != nil {
+		panic(err)
+	}
 	os.Unsetenv(EnvGRPCPort)
 	os.Unsetenv(EnvHTTPPort)
 	os.Unsetenv(EnvFilterExclude)

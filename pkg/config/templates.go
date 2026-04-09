@@ -817,6 +817,9 @@ func mergeTelemetryConfig(base, override *api.TelemetryConfig) *api.TelemetryCon
 			if override.Cloud.TLS.InsecureSkipVerify != nil {
 				result.Cloud.TLS.InsecureSkipVerify = override.Cloud.TLS.InsecureSkipVerify
 			}
+			if override.Cloud.TLS.CAFile != "" {
+				result.Cloud.TLS.CAFile = override.Cloud.TLS.CAFile
+			}
 		}
 		if override.Cloud.Batch != nil {
 			if result.Cloud.Batch == nil {

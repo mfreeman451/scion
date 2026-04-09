@@ -22,6 +22,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 // Providers holds SDK TracerProvider, LoggerProvider, and MeterProvider for OTel export.
@@ -162,6 +163,12 @@ func newOTLPProviders(ctx context.Context, config *Config, res *resource.Resourc
 	}
 	if config.Insecure {
 		traceOpts = append(traceOpts, otlptracegrpc.WithInsecure())
+	} else {
+		tlsConfig, err := loadOTLPTLSConfig(config.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("loading OTLP TLS config: %w", err)
+		}
+		traceOpts = append(traceOpts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(tlsConfig)))
 	}
 	for _, do := range gcpDialOpts {
 		traceOpts = append(traceOpts, otlptracegrpc.WithDialOption(do))
@@ -177,6 +184,13 @@ func newOTLPProviders(ctx context.Context, config *Config, res *resource.Resourc
 	}
 	if config.Insecure {
 		logOpts = append(logOpts, otlploggrpc.WithInsecure())
+	} else {
+		tlsConfig, err := loadOTLPTLSConfig(config.CAFile)
+		if err != nil {
+			_ = traceExporter.Shutdown(ctx)
+			return nil, fmt.Errorf("loading OTLP TLS config: %w", err)
+		}
+		logOpts = append(logOpts, otlploggrpc.WithTLSCredentials(credentials.NewTLS(tlsConfig)))
 	}
 	for _, do := range gcpDialOpts {
 		logOpts = append(logOpts, otlploggrpc.WithDialOption(do))
@@ -193,6 +207,14 @@ func newOTLPProviders(ctx context.Context, config *Config, res *resource.Resourc
 	}
 	if config.Insecure {
 		metricOpts = append(metricOpts, otlpmetricgrpc.WithInsecure())
+	} else {
+		tlsConfig, err := loadOTLPTLSConfig(config.CAFile)
+		if err != nil {
+			_ = traceExporter.Shutdown(ctx)
+			_ = logExporter.Shutdown(ctx)
+			return nil, fmt.Errorf("loading OTLP TLS config: %w", err)
+		}
+		metricOpts = append(metricOpts, otlpmetricgrpc.WithTLSCredentials(credentials.NewTLS(tlsConfig)))
 	}
 	for _, do := range gcpDialOpts {
 		metricOpts = append(metricOpts, otlpmetricgrpc.WithDialOption(do))

@@ -462,8 +462,9 @@ type V1TelemetryCloudConfig struct {
 
 // V1TelemetryTLSConfig holds TLS settings for cloud OTLP export.
 type V1TelemetryTLSConfig struct {
-	Enabled            *bool `json:"enabled,omitempty" yaml:"enabled,omitempty" koanf:"enabled"`
-	InsecureSkipVerify *bool `json:"insecure_skip_verify,omitempty" yaml:"insecure_skip_verify,omitempty" koanf:"insecure_skip_verify"`
+	Enabled            *bool  `json:"enabled,omitempty" yaml:"enabled,omitempty" koanf:"enabled"`
+	InsecureSkipVerify *bool  `json:"insecure_skip_verify,omitempty" yaml:"insecure_skip_verify,omitempty" koanf:"insecure_skip_verify"`
+	CAFile             string `json:"ca_file,omitempty" yaml:"ca_file,omitempty" koanf:"ca_file"`
 }
 
 // V1TelemetryBatchConfig holds batch export settings.
@@ -849,6 +850,7 @@ func mapTelemetryEnvKey(key string) string {
 //	"protocol" -> "telemetry.cloud.protocol"
 //	"headers" -> "telemetry.cloud.headers"
 //	"insecure" -> "telemetry.cloud.tls.insecure_skip_verify"
+//	"ca_file" -> "telemetry.cloud.tls.ca_file"
 func mapOtelEnvKey(key string) string {
 	switch key {
 	case "endpoint":
@@ -859,6 +861,8 @@ func mapOtelEnvKey(key string) string {
 		return "telemetry.cloud.headers"
 	case "insecure":
 		return "telemetry.cloud.tls.insecure_skip_verify"
+	case "ca_file":
+		return "telemetry.cloud.tls.ca_file"
 	default:
 		return "telemetry.cloud." + key
 	}

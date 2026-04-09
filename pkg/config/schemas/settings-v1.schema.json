@@ -619,6 +619,12 @@
           "description": "Skip TLS certificate verification.",
           "x-env-var": "SCION_OTEL_INSECURE",
           "x-since": "1"
+        },
+        "ca_file": {
+          "type": "string",
+          "description": "Path to a PEM-encoded CA bundle used to verify the OTLP endpoint certificate.",
+          "x-env-var": "SCION_OTEL_CA_FILE",
+          "x-since": "1"
         }
       },
       "additionalProperties": false
