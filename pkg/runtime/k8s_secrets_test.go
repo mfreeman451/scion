@@ -16,6 +16,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"testing"
@@ -347,7 +348,8 @@ func TestCreateAgentSecret(t *testing.T) {
 
 	secrets := []api.ResolvedSecret{
 		{Name: "API_KEY", Type: "environment", Target: "API_KEY", Value: "sk-123", Source: "user"},
-		{Name: "TLS_CERT", Type: "file", Target: "/etc/ssl/cert.pem", Value: "cert-data", Source: "user"},
+		{Name: "TLS_CERT", Type: "file", Target: "/etc/ssl/cert.pem", Value: base64.StdEncoding.EncodeToString([]byte("cert-content")), Source: "user"},
+		{Name: "RAW_FILE", Type: "file", Target: "/etc/ssl/raw.pem", Value: "raw-content", Source: "user"},
 		{Name: "CONFIG", Type: "variable", Target: "config", Value: `{"key":"val"}`, Source: "user"},
 	}
 
@@ -375,8 +377,11 @@ func TestCreateAgentSecret(t *testing.T) {
 	if string(secret.Data["API_KEY"]) != "sk-123" {
 		t.Errorf("expected API_KEY=sk-123, got %s", string(secret.Data["API_KEY"]))
 	}
-	if string(secret.Data["TLS_CERT"]) != "cert-data" {
-		t.Errorf("expected TLS_CERT=cert-data, got %s", string(secret.Data["TLS_CERT"]))
+	if string(secret.Data["TLS_CERT"]) != "cert-content" {
+		t.Errorf("expected decoded TLS_CERT=cert-content, got %s", string(secret.Data["TLS_CERT"]))
+	}
+	if string(secret.Data["RAW_FILE"]) != "raw-content" {
+		t.Errorf("expected RAW_FILE=raw-content, got %s", string(secret.Data["RAW_FILE"]))
 	}
 
 	// Check secrets.json for variable secrets

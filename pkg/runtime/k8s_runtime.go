@@ -380,7 +380,11 @@ func (r *KubernetesRuntime) createAgentSecret(ctx context.Context, namespace, ag
 		case "environment":
 			data[s.Name] = []byte(s.Value)
 		case "file":
-			data[s.Name] = []byte(s.Value)
+			decoded, err := base64.StdEncoding.DecodeString(s.Value)
+			if err != nil {
+				decoded = []byte(s.Value)
+			}
+			data[s.Name] = decoded
 		case "variable":
 			varSecrets[s.Target] = s.Value
 		}
