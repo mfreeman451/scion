@@ -16,6 +16,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/GoogleCloudPlatform/scion/pkg/api"
+	"github.com/GoogleCloudPlatform/scion/pkg/config"
 	"github.com/GoogleCloudPlatform/scion/pkg/runtime"
 )
 
@@ -234,6 +236,100 @@ func TestStart_ErrorPropagation_Tmux_Missing(t *testing.T) {
 	expectedPart := "failed to launch container: tmux binary not found"
 	if !strings.Contains(err.Error(), expectedPart) {
 		t.Errorf("Expected error to contain '%s', but got: %v", expectedPart, err)
+	}
+}
+
+func TestStart_RunFailureMarksAgentInfoError(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "scion-test-run-failure")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	originalHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", originalHome)
+	os.Setenv("HOME", tmpDir)
+
+	globalScionDir := filepath.Join(tmpDir, ".scion")
+	globalTemplatesDir := filepath.Join(globalScionDir, "templates")
+	if err := os.MkdirAll(globalTemplatesDir, 0755); err != nil {
+		t.Fatalf("failed to create global templates dir: %v", err)
+	}
+
+	tplDir := filepath.Join(globalTemplatesDir, "gemini")
+	if err := os.MkdirAll(tplDir, 0755); err != nil {
+		t.Fatalf("failed to create gemini template dir: %v", err)
+	}
+	tplConfig := `{"default_harness_config": "generic"}`
+	if err := os.WriteFile(filepath.Join(tplDir, "scion-agent.json"), []byte(tplConfig), 0644); err != nil {
+		t.Fatalf("failed to write template config: %v", err)
+	}
+
+	seedTestHarnessConfig(t, globalScionDir, "generic", "generic")
+
+	projectDir := filepath.Join(tmpDir, "project")
+	projectScionDir := filepath.Join(projectDir, ".scion")
+	if err := os.MkdirAll(projectScionDir, 0755); err != nil {
+		t.Fatalf("failed to create project .scion dir: %v", err)
+	}
+
+	settingsJSON := `
+{
+  "runtimes": {
+    "mock": {}
+  },
+  "profiles": {
+    "test": {
+      "runtime": "mock"
+    }
+  }
+}
+`
+	if err := os.WriteFile(filepath.Join(projectScionDir, "settings.json"), []byte(settingsJSON), 0644); err != nil {
+		t.Fatalf("failed to write settings.json: %v", err)
+	}
+
+	mockRuntime := &runtime.MockRuntime{
+		RunFunc: func(ctx context.Context, config runtime.RunConfig) (string, error) {
+			return "", fmt.Errorf("container run failed: pod security rejected")
+		},
+		ListFunc: func(ctx context.Context, labelFilter map[string]string) ([]api.AgentInfo, error) {
+			return nil, nil
+		},
+		ImageExistsFunc: func(ctx context.Context, image string) (bool, error) {
+			return true, nil
+		},
+	}
+
+	manager := &AgentManager{Runtime: mockRuntime}
+
+	_, err = manager.Start(context.Background(), api.StartOptions{
+		Name:      "test-agent",
+		GrovePath: projectScionDir,
+		Profile:   "test",
+		Task:      "do something",
+		Template:  "gemini",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	agentInfoPath := filepath.Join(config.GetAgentHomePath(projectScionDir, "test-agent"), "agent-info.json")
+	data, err := os.ReadFile(agentInfoPath)
+	if err != nil {
+		t.Fatalf("failed to read agent-info.json: %v", err)
+	}
+
+	var info api.AgentInfo
+	if err := json.Unmarshal(data, &info); err != nil {
+		t.Fatalf("failed to unmarshal agent-info.json: %v", err)
+	}
+
+	if info.Phase != "error" {
+		t.Fatalf("expected phase error after launch failure, got %q", info.Phase)
+	}
+	if info.Runtime != "mock" {
+		t.Fatalf("expected runtime mock after launch failure, got %q", info.Runtime)
 	}
 }
 

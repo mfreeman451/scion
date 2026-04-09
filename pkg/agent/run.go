@@ -779,6 +779,11 @@ func (m *AgentManager) Start(ctx context.Context, opts api.StartOptions) (*api.A
 	}
 	id, err := m.Runtime.Run(ctx, runCfg)
 	if err != nil {
+		// Provisioning writes agent-info.json in "created" state before the
+		// runtime launch. If the launch itself fails, keep the provisioned
+		// workspace but flip the local state to "error" so list/status do not
+		// report a phantom created agent forever.
+		_ = UpdateAgentConfig(opts.Name, opts.GrovePath, "error", m.Runtime.Name(), profileName)
 		if strings.Contains(err.Error(), "executable file not found") ||
 			strings.Contains(err.Error(), "tmux: command not found") ||
 			strings.Contains(err.Error(), "tmux: not found") {
