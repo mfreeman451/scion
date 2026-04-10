@@ -214,11 +214,13 @@ func (s *Server) configureMetadataInterception(uid int) {
 		return
 	}
 
-	if err := setupIPTablesRedirect(s.config.Port); err != nil {
+	err := setupIPTablesRedirect(s.config.Port)
+	if err != nil {
 		// Non-fatal: iptables may not be available (no NET_ADMIN cap, non-Docker runtime).
 		// The GCE_METADATA_HOST / GCE_METADATA_ROOT env vars are the primary mechanism.
 		log.Debug("iptables redirect not available: %v", err)
-	} else {
+	}
+	if err == nil {
 		s.iptablesConfigured = true
 	}
 
