@@ -895,6 +895,9 @@ func ConvertV1ServerToGlobalConfig(v1 *V1ServerConfig) *GlobalConfig {
 
 	// Hub server config
 	if v1.Hub != nil {
+		if v1.Hub.HubID != "" {
+			gc.Hub.HubID = v1.Hub.HubID
+		}
 		if v1.Hub.Port != 0 {
 			gc.Hub.Port = v1.Hub.Port
 		}

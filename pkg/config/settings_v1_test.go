@@ -1312,7 +1312,7 @@ func TestV1ServerConfig_YAMLRoundTrip(t *testing.T) {
 		Hub: &V1ServerHubConfig{
 			Port:         9810,
 			Host:         "0.0.0.0",
-			HubID:        "test-hub-id",
+			HubID:        "hub-123",
 			PublicURL:    "https://hub.example.com",
 			ReadTimeout:  "30s",
 			WriteTimeout: "60s",
@@ -1363,6 +1363,7 @@ func TestV1ServerConfig_YAMLRoundTrip(t *testing.T) {
 	assert.Equal(t, v1.Env, roundTripped.Env)
 	assert.Equal(t, v1.LogLevel, roundTripped.LogLevel)
 	assert.Equal(t, v1.Hub.Port, roundTripped.Hub.Port)
+	assert.Equal(t, v1.Hub.HubID, roundTripped.Hub.HubID)
 	assert.Equal(t, v1.Hub.PublicURL, roundTripped.Hub.PublicURL)
 	assert.Equal(t, v1.Broker.BrokerID, roundTripped.Broker.BrokerID)
 	assert.Equal(t, v1.Broker.BrokerNickname, roundTripped.Broker.BrokerNickname)
@@ -1378,7 +1379,7 @@ func TestConvertV1ServerToGlobalConfig_Basic(t *testing.T) {
 		Hub: &V1ServerHubConfig{
 			Port:         9810,
 			Host:         "0.0.0.0",
-			HubID:        "test-hub-id",
+			HubID:        "hub-123",
 			PublicURL:    "https://hub.example.com",
 			ReadTimeout:  "30s",
 			WriteTimeout: "60s",
@@ -1420,6 +1421,7 @@ func TestConvertV1ServerToGlobalConfig_Basic(t *testing.T) {
 
 	assert.Equal(t, "debug", gc.LogLevel)
 	assert.Equal(t, "json", gc.LogFormat)
+	assert.Equal(t, "hub-123", gc.Hub.HubID)
 	assert.Equal(t, 9810, gc.Hub.Port)
 	assert.Equal(t, "test-hub-id", gc.Hub.HubID)
 	assert.Equal(t, "https://hub.example.com", gc.Hub.Endpoint)
