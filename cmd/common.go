@@ -501,15 +501,23 @@ func RunAgent(cmd *cobra.Command, args []string, resume bool) error {
 	if !info.Detached {
 		statusf("Attaching to agent '%s'...\n", agentName)
 
+		// Use the container ID for exec/attach operations. Container names are
+		// now grove-scoped (e.g. "scion--agent") but agentName is just the agent
+		// name. The container ID is the reliable identifier for runtime operations.
+		containerID := info.ContainerID
+		if containerID == "" {
+			containerID = agentName // fallback for runtimes that don't return an ID
+		}
+
 		// Wait for the container to be ready before attaching.
 		// After container start, sciontool init needs time to set up the user,
 		// run pre-start hooks, and launch the child process. The tmux session
 		// must exist before we can attach.
-		if err := waitForTmuxSession(rt, agentName); err != nil {
+		if err := waitForTmuxSession(rt, containerID); err != nil {
 			return err
 		}
 
-		return rt.Attach(context.Background(), agentName)
+		return rt.Attach(context.Background(), containerID)
 	}
 
 	displayStatus := "launched"
