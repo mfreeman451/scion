@@ -69,6 +69,7 @@ func TestResolveHubEndpointForStartPrecedence(t *testing.T) {
 		resolved             map[string]string
 		grovePath            string
 		containerHubEndpoint string
+		runtimeName          string
 		want                 string
 	}{
 		{
@@ -102,13 +103,26 @@ func TestResolveHubEndpointForStartPrecedence(t *testing.T) {
 			broker:               "http://localhost:8080",
 			resolved:             map[string]string{"SCION_HUB_ENDPOINT": "https://hub.production.example.com"},
 			containerHubEndpoint: "http://host.docker.internal:8080",
+			runtimeName:          "docker",
 			want:                 "https://hub.production.example.com",
+		},
+		{
+			name:                 "kubernetes prefers configured internal endpoint over resolved public URL",
+			broker:               "http://localhost:8080",
+			resolved:             map[string]string{"SCION_HUB_ENDPOINT": "https://hub.production.example.com"},
+			containerHubEndpoint: "http://scion.scion.svc.cluster.local",
+			runtimeName:          "kubernetes",
+			want:                 "http://scion.scion.svc.cluster.local",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolveHubEndpointForStart(tt.broker, tt.resolved, tt.grovePath, tt.containerHubEndpoint, "docker")
+			runtimeName := tt.runtimeName
+			if runtimeName == "" {
+				runtimeName = "docker"
+			}
+			got := resolveHubEndpointForStart(tt.broker, tt.resolved, tt.grovePath, tt.containerHubEndpoint, runtimeName)
 			if got != tt.want {
 				t.Fatalf("resolveHubEndpointForStart() = %q, want %q", got, tt.want)
 			}
@@ -132,11 +146,18 @@ func TestApplyContainerBridgeOverride(t *testing.T) {
 			want:                 "http://host.containers.internal:9810",
 		},
 		{
-			name:                 "kubernetes keeps localhost endpoint",
+			name:                 "kubernetes overrides localhost endpoint",
 			endpoint:             "http://localhost:9810",
-			containerHubEndpoint: "http://host.containers.internal:9810",
+			containerHubEndpoint: "http://scion.scion.svc.cluster.local",
 			runtimeName:          "kubernetes",
-			want:                 "http://localhost:9810",
+			want:                 "http://scion.scion.svc.cluster.local:9810",
+		},
+		{
+			name:                 "kubernetes overrides remote endpoint",
+			endpoint:             "https://hub.example.com",
+			containerHubEndpoint: "http://scion.scion.svc.cluster.local",
+			runtimeName:          "kubernetes",
+			want:                 "http://scion.scion.svc.cluster.local",
 		},
 		{
 			name:                 "remote endpoint is unchanged",

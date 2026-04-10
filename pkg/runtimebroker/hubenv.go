@@ -91,29 +91,42 @@ func hubEndpointFromGroveSettings(grovePath string) string {
 }
 
 func applyContainerBridgeOverride(endpoint, containerHubEndpoint, runtimeName string) string {
-	if containerHubEndpoint == "" || runtimeName == "kubernetes" || !isLocalhostEndpoint(endpoint) {
+	if containerHubEndpoint == "" {
 		return endpoint
 	}
+
+	if runtimeName == "kubernetes" {
+		return rewriteHubEndpoint(containerHubEndpoint, endpoint)
+	}
+
+	if !isLocalhostEndpoint(endpoint) {
+		return endpoint
+	}
+
+	return rewriteHubEndpoint(containerHubEndpoint, endpoint)
+}
+
+func rewriteHubEndpoint(overrideEndpoint, originalEndpoint string) string {
 	// Preserve the port from the actual endpoint rather than using the
 	// pre-computed containerHubEndpoint wholesale. The containerHubEndpoint
 	// is computed once at server startup and may have a different port
 	// (e.g. standalone hub port 9810) than the endpoint being overridden
 	// (e.g. combo-mode web port 8080).
-	epURL, err := url.Parse(endpoint)
+	epURL, err := url.Parse(originalEndpoint)
 	if err != nil {
-		return containerHubEndpoint
+		return overrideEndpoint
 	}
-	bridgeURL, err := url.Parse(containerHubEndpoint)
+	overrideURL, err := url.Parse(overrideEndpoint)
 	if err != nil {
-		return containerHubEndpoint
+		return overrideEndpoint
 	}
 	port := epURL.Port()
 	if port == "" {
 		// No explicit port in endpoint; fall back to the pre-computed value.
-		return containerHubEndpoint
+		return overrideEndpoint
 	}
-	bridgeURL.Host = net.JoinHostPort(bridgeURL.Hostname(), port)
-	return bridgeURL.String()
+	overrideURL.Host = net.JoinHostPort(overrideURL.Hostname(), port)
+	return overrideURL.String()
 }
 
 func redactEnvValueForLog(key, value string) string {

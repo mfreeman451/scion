@@ -1523,11 +1523,11 @@ hub:
 		}
 	})
 
-	t.Run("kubernetes runtime skips container endpoint override", func(t *testing.T) {
+	t.Run("kubernetes runtime prefers configured container endpoint override", func(t *testing.T) {
 		cfg := DefaultServerConfig()
 		cfg.BrokerID = "test-broker-id"
 		cfg.BrokerName = "test-host"
-		cfg.ContainerHubEndpoint = "http://host.containers.internal:8080"
+		cfg.ContainerHubEndpoint = "http://scion.scion.svc.cluster.local"
 
 		mgr := &envCapturingManager{}
 		rt := &runtime.MockRuntime{
@@ -1549,9 +1549,8 @@ hub:
 			t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, w.Code, w.Body.String())
 		}
 
-		// Kubernetes runtime should NOT use bridge address
-		if got := mgr.lastEnv["SCION_HUB_ENDPOINT"]; got != "http://localhost:8080" {
-			t.Errorf("expected SCION_HUB_ENDPOINT='http://localhost:8080' (k8s skips bridge), got %q", got)
+		if got := mgr.lastEnv["SCION_HUB_ENDPOINT"]; got != "http://scion.scion.svc.cluster.local:8080" {
+			t.Errorf("expected SCION_HUB_ENDPOINT='http://scion.scion.svc.cluster.local:8080' (k8s uses configured override), got %q", got)
 		}
 	})
 }
