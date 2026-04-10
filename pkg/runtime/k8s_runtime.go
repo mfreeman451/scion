@@ -73,6 +73,15 @@ func (r *KubernetesRuntime) ExecUser() string {
 	return "scion"
 }
 
+func execTargetUsername(pod *corev1.Pod) string {
+	if pod != nil {
+		if u := strings.TrimSpace(pod.Annotations["scion.username"]); u != "" {
+			return u
+		}
+	}
+	return "scion"
+}
+
 func shellQuote(arg string) string {
 	return fmt.Sprintf("'%s'", strings.ReplaceAll(arg, "'", "'\"'\"'"))
 }
@@ -85,31 +94,69 @@ func shellJoin(args []string) string {
 	return strings.Join(quoted, " ")
 }
 
-func wrapExecCommandForUser(username string, cmd []string) []string {
-	if username == "" {
-		username = "scion"
+func buildExecCommandForUser(currentUser, targetUser string, cmd []string) []string {
+	if targetUser == "" {
+		targetUser = "scion"
 	}
-
-	shellCmd := shellJoin(cmd)
-	wrapper := fmt.Sprintf(
-		`if [ "$(id -un)" = %s ]; then exec %s; else exec su - %s -c %s; fi`,
-		shellQuote(username),
-		shellCmd,
-		shellQuote(username),
-		shellQuote(shellCmd),
-	)
-	return []string{"/bin/sh", "-lc", wrapper}
+	if currentUser == "" || currentUser == targetUser || targetUser == "root" {
+		return append([]string(nil), cmd...)
+	}
+	return []string{"su", "-", targetUser, "-c", shellJoin(cmd)}
 }
 
-func (r *KubernetesRuntime) execUsername(ctx context.Context, namespace, podName string) string {
+func podRunsAsNonRoot(pod *corev1.Pod, containerName string) bool {
+	if pod == nil {
+		return false
+	}
+	if pod.Spec.SecurityContext != nil {
+		if pod.Spec.SecurityContext.RunAsUser != nil {
+			return *pod.Spec.SecurityContext.RunAsUser != 0
+		}
+		if pod.Spec.SecurityContext.RunAsNonRoot != nil && *pod.Spec.SecurityContext.RunAsNonRoot {
+			return true
+		}
+	}
+	for _, container := range pod.Spec.Containers {
+		if container.Name != containerName {
+			continue
+		}
+		if container.SecurityContext == nil {
+			return false
+		}
+		if container.SecurityContext.RunAsUser != nil {
+			return *container.SecurityContext.RunAsUser != 0
+		}
+		if container.SecurityContext.RunAsNonRoot != nil && *container.SecurityContext.RunAsNonRoot {
+			return true
+		}
+		return false
+	}
+	return false
+}
+
+func (r *KubernetesRuntime) currentExecUser(ctx context.Context, namespace, podName string) (string, error) {
+	out, err := r.execInPod(ctx, namespace, podName, []string{"id", "-un"})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+func (r *KubernetesRuntime) commandForExec(ctx context.Context, namespace, podName string, cmd []string) ([]string, error) {
 	pod, err := r.Client.Clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
-		return "scion"
+		return nil, err
 	}
-	if u := strings.TrimSpace(pod.Annotations["scion.username"]); u != "" {
-		return u
+
+	targetUser := execTargetUsername(pod)
+	currentUser, err := r.currentExecUser(ctx, namespace, podName)
+	if err == nil && currentUser != "" {
+		return buildExecCommandForUser(currentUser, targetUser, cmd), nil
 	}
-	return "scion"
+	if podRunsAsNonRoot(pod, "agent") {
+		return append([]string(nil), cmd...), nil
+	}
+	return buildExecCommandForUser("root", targetUser, cmd), nil
 }
 
 // resolveNamespace determines the namespace for a pod by looking up the
@@ -341,8 +388,7 @@ func (r *KubernetesRuntime) Run(ctx context.Context, config RunConfig) (string, 
 		// Fix ownership: tar extraction runs as root via K8s exec, so synced
 		// files are owned by root. chown them to the scion user so the
 		// privilege-dropped harness process can access its home directory.
-		chownCmd := fmt.Sprintf("chown -R %s:%s %s", config.UnixUsername, config.UnixUsername, destHome)
-		if _, err := r.execInPod(ctx, namespace, createdPod.Name, []string{"sh", "-c", chownCmd}); err != nil {
+		if _, err := r.execInPod(ctx, namespace, createdPod.Name, []string{"chown", "-R", fmt.Sprintf("%s:%s", config.UnixUsername, config.UnixUsername), destHome}); err != nil {
 			runtimeLog.Debug("Failed to chown home directory (non-fatal)", "error", err)
 		}
 	}
@@ -357,8 +403,7 @@ func (r *KubernetesRuntime) Run(ctx context.Context, config RunConfig) (string, 
 			return createdPod.Name, fmt.Errorf("failed to sync workspace: %w", err)
 		}
 		// Fix workspace ownership for the scion user
-		chownCmd := fmt.Sprintf("chown -R %s:%s /workspace", config.UnixUsername, config.UnixUsername)
-		if _, err := r.execInPod(ctx, namespace, createdPod.Name, []string{"sh", "-c", chownCmd}); err != nil {
+		if _, err := r.execInPod(ctx, namespace, createdPod.Name, []string{"chown", "-R", fmt.Sprintf("%s:%s", config.UnixUsername, config.UnixUsername), "/workspace"}); err != nil {
 			runtimeLog.Debug("Failed to chown workspace (non-fatal)", "error", err)
 		}
 	}
@@ -1758,16 +1803,14 @@ func (r *KubernetesRuntime) Attach(ctx context.Context, id string) error {
 		Namespace(namespace).
 		SubResource("exec")
 
-	// Determine the container username so we attach as the correct user
-	// (K8s exec has no --user flag; we use su to switch from root).
-	username := "scion"
-	if u, ok := agent.Annotations["scion.username"]; ok && u != "" {
-		username = u
+	execCmd, err := r.commandForExec(ctx, namespace, podName, []string{"tmux", "attach", "-t", "scion"})
+	if err != nil {
+		return err
 	}
 
 	option := &corev1.PodExecOptions{
 		Container: "agent",
-		Command:   wrapExecCommandForUser(username, []string{"tmux", "attach", "-t", "scion"}),
+		Command:   execCmd,
 		Stdin:     true,
 		Stdout:    true,
 		Stderr:    true,
@@ -2021,11 +2064,14 @@ func (r *KubernetesRuntime) Exec(ctx context.Context, id string, cmd []string) (
 		Namespace(namespace).
 		SubResource("exec")
 
-	username := r.execUsername(ctx, namespace, podName)
+	execCmd, err := r.commandForExec(ctx, namespace, podName, cmd)
+	if err != nil {
+		return "", err
+	}
 
 	option := &corev1.PodExecOptions{
 		Container: "agent",
-		Command:   wrapExecCommandForUser(username, cmd),
+		Command:   execCmd,
 		Stdin:     false,
 		Stdout:    true,
 		Stderr:    true,

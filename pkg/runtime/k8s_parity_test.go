@@ -373,27 +373,34 @@ func TestCreateAuthFileSecret(t *testing.T) {
 
 // --- K8s exec user context parity (matches Docker/Podman --user scion) ---
 
-func TestK8sExec_WrapsCommandWithUserAwareShell(t *testing.T) {
+func TestK8sExec_BuildCommandForMatchingUserReturnsRawArgv(t *testing.T) {
 	cmd := []string{"tmux", "send-keys", "-t", "scion:0", "hello world", "Enter"}
 
-	wrapped := wrapExecCommandForUser("scion", cmd)
-	if len(wrapped) != 3 {
-		t.Fatalf("expected 3-part shell command, got %v", wrapped)
+	got := buildExecCommandForUser("scion", "scion", cmd)
+	if len(got) != len(cmd) {
+		t.Fatalf("expected raw argv %v, got %v", cmd, got)
 	}
-	if wrapped[0] != "/bin/sh" || wrapped[1] != "-lc" {
-		t.Fatalf("expected /bin/sh -lc wrapper, got %v", wrapped[:2])
+	for i := range cmd {
+		if got[i] != cmd[i] {
+			t.Fatalf("expected raw argv %v, got %v", cmd, got)
+		}
 	}
+}
 
-	shellCmd := wrapped[2]
-	if !strings.Contains(shellCmd, `id -un`) {
-		t.Fatalf("expected current-user check in %q", shellCmd)
+func TestK8sExec_BuildCommandForDifferentUserFallsBackToSu(t *testing.T) {
+	cmd := []string{"tmux", "attach", "-t", "scion"}
+
+	got := buildExecCommandForUser("root", "scion", cmd)
+	if len(got) != 5 {
+		t.Fatalf("expected su argv, got %v", got)
 	}
-	if !strings.Contains(shellCmd, `exec su - 'scion' -c`) {
-		t.Fatalf("expected su fallback in %q", shellCmd)
+	if got[0] != "su" || got[1] != "-" || got[2] != "scion" || got[3] != "-c" {
+		t.Fatalf("expected su - scion -c prefix, got %v", got[:4])
 	}
+	shellCmd := got[4]
 	for _, arg := range cmd {
 		if !strings.Contains(shellCmd, arg) {
-			t.Errorf("wrapped shell command %q should contain argument %q", shellCmd, arg)
+			t.Errorf("su shell command %q should contain argument %q", shellCmd, arg)
 		}
 	}
 }
@@ -407,8 +414,7 @@ func TestK8sExec_QuotesSingleQuotesInArgs(t *testing.T) {
 	}
 }
 
-func TestK8sExecUsername_UsesAnnotationWhenPresent(t *testing.T) {
-	clientset := k8sfake.NewSimpleClientset()
+func TestK8sExecTargetUsername_UsesAnnotationWhenPresent(t *testing.T) {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:   "scion",
@@ -416,13 +422,57 @@ func TestK8sExecUsername_UsesAnnotationWhenPresent(t *testing.T) {
 			Annotations: map[string]string{"scion.username": "carver"},
 		},
 	}
-	if _, err := clientset.CoreV1().Pods("scion").Create(context.Background(), pod, metav1.CreateOptions{}); err != nil {
-		t.Fatalf("failed to create pod: %v", err)
+	if got := execTargetUsername(pod); got != "carver" {
+		t.Fatalf("got username %q, want carver", got)
+	}
+}
+
+func TestK8sPodRunsAsNonRoot(t *testing.T) {
+	runAsUser := int64(1000)
+	runAsNonRoot := true
+	tests := []struct {
+		name string
+		pod  *corev1.Pod
+		want bool
+	}{
+		{
+			name: "pod security context runAsUser",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					SecurityContext: &corev1.PodSecurityContext{RunAsUser: &runAsUser},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "container security context runAsNonRoot",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:            "agent",
+						SecurityContext: &corev1.SecurityContext{RunAsNonRoot: &runAsNonRoot},
+					}},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "no security context",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "agent"}},
+				},
+			},
+			want: false,
+		},
 	}
 
-	rt := &KubernetesRuntime{Client: &k8s.Client{Clientset: clientset}}
-	if got := rt.execUsername(context.Background(), "scion", "agent"); got != "carver" {
-		t.Fatalf("got username %q, want carver", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := podRunsAsNonRoot(tt.pod, "agent"); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
