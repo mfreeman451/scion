@@ -663,8 +663,8 @@ func pullHarnessConfigFromHub(hubCtx *HubContext, hc *hubclient.HarnessConfig, t
 	for _, fileInfo := range downloadResp.Files {
 		filePath := filepath.Join(destPath, filepath.FromSlash(fileInfo.Path))
 
-		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-			return fmt.Errorf("failed to create directory for %s: %w", fileInfo.Path, err)
+		if err := ensureParentDir(filePath); err != nil {
+			return err
 		}
 
 		content, err := downloadHarnessConfigContent(ctx, hubCtx.Client.HarnessConfigs(), hc.ID, fileInfo, useHubFileRead)
@@ -672,8 +672,8 @@ func pullHarnessConfigFromHub(hubCtx *HubContext, hc *hubclient.HarnessConfig, t
 			return err
 		}
 
-		if err := os.WriteFile(filePath, content, 0644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", fileInfo.Path, err)
+		if err := writeHarnessConfigFile(filePath, content); err != nil {
+			return err
 		}
 		fmt.Printf("  Downloaded: %s\n", fileInfo.Path)
 	}

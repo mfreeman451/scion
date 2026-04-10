@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/GoogleCloudPlatform/scion/pkg/hubclient"
 )
@@ -121,6 +122,20 @@ func uploadHarnessConfigFileBySignedURL(
 
 	if err := service.UploadFile(ctx, urlInfo.URL, urlInfo.Method, urlInfo.Headers, f); err != nil {
 		return fmt.Errorf("upload harness config file: %w", err)
+	}
+	return nil
+}
+
+func ensureParentDir(filePath string) error {
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return fmt.Errorf("create harness config destination directory: %w", err)
+	}
+	return nil
+}
+
+func writeHarnessConfigFile(filePath string, content []byte) error {
+	if err := os.WriteFile(filePath, content, 0644); err != nil {
+		return fmt.Errorf("write harness config file: %w", err)
 	}
 	return nil
 }
