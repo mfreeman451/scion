@@ -492,7 +492,7 @@ func syncHarnessConfigToHub(hubCtx *HubContext, name, localPath, scope, harnessT
 
 		needsFullUpload := false
 		if err != nil {
-			if strings.Contains(err.Error(), "harness config has no files") {
+			if isHarnessConfigNoFilesError(err) {
 				fmt.Printf("Harness-config '%s' exists but has no files. Uploading all files...\n", name)
 				needsFullUpload = true
 				filesToUpload = fileReqs
@@ -576,7 +576,7 @@ func syncHarnessConfigToHub(hubCtx *HubContext, name, localPath, scope, harnessT
 	fmt.Println("Finalizing harness-config...")
 	hc, err := hubCtx.Client.HarnessConfigs().Finalize(ctx, hcID, manifest)
 	if err != nil {
-		if !strings.Contains(err.Error(), "file not found") {
+		if !isHarnessConfigMissingFileError(err) {
 			return fmt.Errorf("failed to finalize: %w", err)
 		}
 
@@ -624,6 +624,20 @@ func syncHarnessConfigToHub(hubCtx *HubContext, name, localPath, scope, harnessT
 	fmt.Printf("  Content Hash: %s\n", truncateHash(hc.ContentHash))
 
 	return nil
+}
+
+func isHarnessConfigNoFilesError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "harness config has no files")
+}
+
+func isHarnessConfigMissingFileError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "file not found")
 }
 
 // pullHarnessConfigFromHub downloads a harness config from the Hub to local disk.
