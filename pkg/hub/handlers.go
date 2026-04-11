@@ -811,7 +811,7 @@ func (s *Server) createAgentInGrove(
 				} else if envReqs != nil {
 					// Broker returned 202: needs env gather
 					agent.Phase = string(state.PhaseProvisioning)
-					if err := s.store.UpdateAgent(ctx, agent); err != nil {
+					if err := s.updateAgentAfterDispatch(ctx, agent); err != nil {
 						s.agentLifecycleLog.Warn("Failed to update agent phase for env-gather", "agent_id", agent.ID, "error", err)
 					}
 
@@ -869,7 +869,7 @@ func (s *Server) createAgentInGrove(
 				warnings = append(warnings, "Failed to provision on runtime broker: "+err.Error())
 			} else {
 				agent.Phase = string(state.PhaseCreated)
-				if err := s.store.UpdateAgent(ctx, agent); err != nil {
+				if err := s.updateAgentAfterDispatch(ctx, agent); err != nil {
 					warnings = append(warnings, "Failed to update agent phase: "+err.Error())
 				}
 			}
@@ -919,6 +919,10 @@ func (s *Server) preserveTerminalPhase(ctx context.Context, agent *store.Agent) 
 }
 
 func (s *Server) updateAgentAfterDispatch(ctx context.Context, agent *store.Agent) error {
+	// One retry is intentional here: we only need to recover the common case
+	// where a single concurrent status update bumps StateVersion while dispatch
+	// is in flight. If a second write wins the race too, return the conflict to
+	// the caller rather than spinning in a longer CAS loop inside the request.
 	err := s.store.UpdateAgent(ctx, agent)
 	if err == nil || !errors.Is(err, store.ErrVersionConflict) {
 		return err
