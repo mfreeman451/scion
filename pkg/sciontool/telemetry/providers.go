@@ -214,42 +214,36 @@ func newOTLPProviders(ctx context.Context, config *Config, res *resource.Resourc
 // buildProviders constructs TracerProvider, LoggerProvider, and MeterProvider
 // from the given exporters, using either batch or sync processing.
 func buildProviders(res *resource.Resource, traceExp trace.SpanExporter, logExp log.Exporter, metricExp metric.Exporter, batch bool) *Providers {
-	var tp *trace.TracerProvider
-	var lp *log.LoggerProvider
-	var mp *metric.MeterProvider
-
-	if batch {
-		tp = trace.NewTracerProvider(
-			trace.WithResource(res),
-			trace.WithBatcher(traceExp),
-		)
-		lp = log.NewLoggerProvider(
-			log.WithResource(res),
-			log.WithProcessor(log.NewBatchProcessor(logExp)),
-		)
-		mp = metric.NewMeterProvider(
-			metric.WithResource(res),
-			metric.WithReader(metric.NewPeriodicReader(metricExp)),
-		)
-	} else {
-		tp = trace.NewTracerProvider(
-			trace.WithResource(res),
-			trace.WithSyncer(traceExp),
-		)
-		lp = log.NewLoggerProvider(
-			log.WithResource(res),
-			log.WithProcessor(log.NewSimpleProcessor(logExp)),
-		)
-		mp = metric.NewMeterProvider(
-			metric.WithResource(res),
-			metric.WithReader(metric.NewPeriodicReader(metricExp)),
-		)
+	if !batch {
+		return &Providers{
+			TracerProvider: trace.NewTracerProvider(
+				trace.WithResource(res),
+				trace.WithSyncer(traceExp),
+			),
+			LoggerProvider: log.NewLoggerProvider(
+				log.WithResource(res),
+				log.WithProcessor(log.NewSimpleProcessor(logExp)),
+			),
+			MeterProvider: metric.NewMeterProvider(
+				metric.WithResource(res),
+				metric.WithReader(metric.NewPeriodicReader(metricExp)),
+			),
+		}
 	}
 
 	return &Providers{
-		TracerProvider: tp,
-		LoggerProvider: lp,
-		MeterProvider:  mp,
+		TracerProvider: trace.NewTracerProvider(
+			trace.WithResource(res),
+			trace.WithBatcher(traceExp),
+		),
+		LoggerProvider: log.NewLoggerProvider(
+			log.WithResource(res),
+			log.WithProcessor(log.NewBatchProcessor(logExp)),
+		),
+		MeterProvider: metric.NewMeterProvider(
+			metric.WithResource(res),
+			metric.WithReader(metric.NewPeriodicReader(metricExp)),
+		),
 	}
 }
 
