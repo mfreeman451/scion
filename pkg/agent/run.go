@@ -17,6 +17,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/user"
@@ -32,6 +33,21 @@ import (
 	"github.com/GoogleCloudPlatform/scion/pkg/runtime"
 	"github.com/GoogleCloudPlatform/scion/pkg/util"
 )
+
+var ErrTmuxBinaryNotFound = errors.New("tmux binary not found")
+
+func classifyLaunchRuntimeError(err error, resolvedImage string) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "executable file not found") ||
+		strings.Contains(msg, "tmux: command not found") ||
+		strings.Contains(msg, "tmux: not found") {
+		return fmt.Errorf("failed to launch container: %w in image %q: %w", ErrTmuxBinaryNotFound, resolvedImage, err)
+	}
+	return fmt.Errorf("failed to launch container: %w", err)
+}
 
 func (m *AgentManager) Start(ctx context.Context, opts api.StartOptions) (*api.AgentInfo, error) {
 	// Resolve grove name early so we can scope the container lookup below.
@@ -786,13 +802,7 @@ func (m *AgentManager) Start(ctx context.Context, opts api.StartOptions) (*api.A
 		if updateErr := UpdateAgentConfig(opts.Name, opts.GrovePath, "error", m.Runtime.Name(), profileName); updateErr != nil {
 			util.Debugf("Start: failed to mark agent error in local config: %v", updateErr)
 		}
-		if strings.Contains(err.Error(), "executable file not found") ||
-			strings.Contains(err.Error(), "tmux: command not found") ||
-			strings.Contains(err.Error(), "tmux: not found") {
-			return nil, fmt.Errorf("failed to launch container: tmux binary not found in image '%s'. "+
-				"Ensure the image has tmux installed. Error: %w", resolvedImage, err)
-		}
-		return nil, fmt.Errorf("failed to launch container: %w", err)
+		return nil, classifyLaunchRuntimeError(err, resolvedImage)
 	}
 
 	status := "running"

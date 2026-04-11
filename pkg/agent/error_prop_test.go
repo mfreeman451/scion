@@ -17,6 +17,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -231,9 +232,11 @@ func TestStart_ErrorPropagation_Tmux_Missing(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	// Verify the error message
-	// Should wrap in "failed to launch container: tmux binary not found..."
-	expectedPart := "failed to launch container: tmux binary not found"
+	if !errors.Is(err, ErrTmuxBinaryNotFound) {
+		t.Fatalf("expected ErrTmuxBinaryNotFound, got: %v", err)
+	}
+
+	expectedPart := "failed to launch container"
 	if !strings.Contains(err.Error(), expectedPart) {
 		t.Errorf("Expected error to contain '%s', but got: %v", expectedPart, err)
 	}
