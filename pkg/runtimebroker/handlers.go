@@ -895,7 +895,12 @@ func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request, id, groveID
 }
 
 func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request, id, groveID, action string) {
-	if r.Method != http.MethodPost {
+	method, ok := api.RuntimeBrokerAgentActionMethod(action)
+	if !ok {
+		NotFound(w, "Action")
+		return
+	}
+	if r.Method != method {
 		MethodNotAllowed(w)
 		return
 	}
@@ -919,8 +924,6 @@ func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request, id, g
 		s.checkAgentPrompt(w, r, id, groveID)
 	case api.AgentActionFinalizeEnv:
 		s.finalizeEnv(w, r, id)
-	default:
-		NotFound(w, "Action")
 	}
 }
 

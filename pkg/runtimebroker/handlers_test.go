@@ -505,6 +505,22 @@ func TestMethodNotAllowed(t *testing.T) {
 	}
 }
 
+func TestAgentLogsAllowsGet(t *testing.T) {
+	srv := newTestServer()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/agents/test-agent-1/logs", nil)
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, w.Code)
+	}
+	if body := strings.TrimSpace(w.Body.String()); body != "mock logs" {
+		t.Fatalf("expected body %q, got %q", "mock logs", body)
+	}
+}
+
 // envCapturingManager captures the environment variables passed to Start().
 // Used for testing that Hub credentials are properly set.
 type envCapturingManager struct {
