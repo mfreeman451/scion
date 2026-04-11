@@ -20,7 +20,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/GoogleCloudPlatform/scion/pkg/agent"
 	"github.com/GoogleCloudPlatform/scion/pkg/api"
 	"github.com/GoogleCloudPlatform/scion/pkg/hubclient"
 	"github.com/GoogleCloudPlatform/scion/pkg/runtime"
@@ -61,12 +60,7 @@ var logsCmd = &cobra.Command{
 		}
 
 		// Local mode: read from filesystem
-		effectiveProfile := profile
-		if effectiveProfile == "" {
-			effectiveProfile = agent.GetSavedRuntime(agentName, grovePath)
-		}
-
-		rt := runtime.GetRuntime(grovePath, effectiveProfile)
+		rt := runtime.GetRuntime(grovePath, profile)
 
 		// Find the agent to get its grove path
 		agents, err := rt.List(context.Background(), map[string]string{

@@ -361,13 +361,7 @@ func RunAgent(cmd *cobra.Command, args []string, resume bool) error {
 	}
 
 	// Local mode
-	effectiveProfile := profile
-	if effectiveProfile == "" {
-		// If no profile flag, check if we have a saved profile for this agent
-		effectiveProfile = agent.GetSavedProfile(agentName, grovePath)
-	}
-
-	rt := agent.ResolveRuntime(grovePath, agentName, profile)
+	rt := runtime.GetRuntime(grovePath, profile)
 	mgr := agent.NewManager(rt)
 
 	// Check if already running and we want to attach
@@ -424,7 +418,7 @@ func RunAgent(cmd *cobra.Command, args []string, resume bool) error {
 		Name:          agentName,
 		Task:          effectiveTask,
 		Template:      templateName,
-		Profile:       effectiveProfile,
+		Profile:       profile,
 		HarnessConfig: effectiveHarnessConfig,
 		HarnessAuth:   effectiveHarnessAuth,
 		Image:         resolvedImage,

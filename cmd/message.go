@@ -183,12 +183,7 @@ Examples:
 		// so local mode continues to use plain text delivery.
 		ctx := context.Background()
 
-		effectiveProfile := profile
-		if !(msgBroadcast || msgAll) && effectiveProfile == "" {
-			effectiveProfile = agent.GetSavedProfile(agentName, grovePath)
-		}
-
-		rt := runtime.GetRuntime(grovePath, effectiveProfile)
+		rt := runtime.GetRuntime(grovePath, profile)
 		mgr := agent.NewManager(rt)
 		defer mgr.Close()
 

@@ -19,21 +19,9 @@ import (
 )
 
 // ResolveRuntime determines the runtime to use for an agent.
-// It prioritizes the explicit profile, then saved profile, then saved runtime.
-// Finally it uses the runtime system's default detection.
+// If profileFlag is non-empty, it is used as the profile name.
+// Otherwise, GetRuntime resolves the active profile from merged settings
+// (grove settings override global settings).
 func ResolveRuntime(grovePath, agentName, profileFlag string) runtime.Runtime {
-	effectiveProfile := profileFlag
-	if effectiveProfile == "" {
-		// If no profile flag, check if we have a saved profile for this agent
-		effectiveProfile = GetSavedProfile(agentName, grovePath)
-	}
-
-	effectiveRuntime := effectiveProfile
-	if effectiveRuntime == "" {
-		// If still no profile, we'll let GetRuntime handle auto-detection
-		// but we might want to check for saved runtime as fallback
-		effectiveRuntime = GetSavedRuntime(agentName, grovePath)
-	}
-
-	return runtime.GetRuntime(grovePath, effectiveRuntime)
+	return runtime.GetRuntime(grovePath, profileFlag)
 }

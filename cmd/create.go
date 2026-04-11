@@ -84,12 +84,7 @@ arguments are provided, an empty prompt.md is created for later editing.`,
 		}
 
 		// Local mode
-		effectiveProfile := profile
-		if effectiveProfile == "" {
-			effectiveProfile = agent.GetSavedProfile(agentName, grovePath)
-		}
-
-		rt := runtime.GetRuntime(grovePath, effectiveProfile)
+		rt := runtime.GetRuntime(grovePath, profile)
 		mgr := agent.NewManager(rt)
 
 		// Apply inline config overrides to CLI options
@@ -117,7 +112,7 @@ arguments are provided, an empty prompt.md is created for later editing.`,
 			Name:          agentName,
 			Task:          effectiveTask,
 			Template:      templateName,
-			Profile:       effectiveProfile,
+			Profile:       profile,
 			HarnessConfig: effectiveHarnessConfig,
 			Image:         effectiveImage,
 			GrovePath:     grovePath,

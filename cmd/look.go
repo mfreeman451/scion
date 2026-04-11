@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/GoogleCloudPlatform/scion/pkg/agent"
 	"github.com/GoogleCloudPlatform/scion/pkg/api"
 	"github.com/GoogleCloudPlatform/scion/pkg/runtime"
 	"github.com/spf13/cobra"
@@ -74,12 +73,7 @@ var lookCmd = &cobra.Command{
 			return lookViaHub(hubCtx, agentName, execCmd)
 		}
 
-		effectiveProfile := profile
-		if effectiveProfile == "" {
-			effectiveProfile = agent.GetSavedRuntime(agentName, grovePath)
-		}
-
-		rt := runtime.GetRuntime(grovePath, effectiveProfile)
+		rt := runtime.GetRuntime(grovePath, profile)
 
 		output, err := rt.Exec(context.Background(), agentName, execCmd)
 		if err != nil {

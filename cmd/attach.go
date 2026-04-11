@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/GoogleCloudPlatform/scion/pkg/agent"
 	"github.com/GoogleCloudPlatform/scion/pkg/agent/state"
 	"github.com/GoogleCloudPlatform/scion/pkg/api"
 	"github.com/GoogleCloudPlatform/scion/pkg/config"
@@ -87,10 +86,7 @@ If the agent was started with tmux support, this will attach to the tmux session
 			return fmt.Errorf("agent '%s' not found in grove '%s'", agentName, groveName)
 		}
 
-		// Load agent config to get the runtime
-		effectiveRuntime := agent.GetSavedRuntime(agentName, targetGrovePath)
-
-		rt := runtime.GetRuntime(targetGrovePath, effectiveRuntime)
+		rt := runtime.GetRuntime(targetGrovePath, profile)
 
 		fmt.Printf("Attaching to agent '%s' (grove: %s)...\n", agentName, groveName)
 		err = rt.Attach(context.Background(), agentName)

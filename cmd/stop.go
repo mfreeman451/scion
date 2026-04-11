@@ -82,12 +82,7 @@ var stopCmd = &cobra.Command{
 		}
 
 		// Local mode
-		effectiveProfile := profile
-		if effectiveProfile == "" {
-			effectiveProfile = agent.GetSavedProfile(agentName, grovePath)
-		}
-
-		rt := runtime.GetRuntime(grovePath, effectiveProfile)
+		rt := runtime.GetRuntime(grovePath, profile)
 		mgr := agent.NewManager(rt)
 
 		statusf("Stopping agent '%s'...\n", agentName)
@@ -213,12 +208,7 @@ func stopAllAgents() error {
 
 			res := agentResult{Name: name, Status: "success"}
 
-			effectiveProfile := profile
-			if effectiveProfile == "" {
-				effectiveProfile = agent.GetSavedProfile(name, grovePath)
-			}
-
-			agentRt := runtime.GetRuntime(grovePath, effectiveProfile)
+			agentRt := runtime.GetRuntime(grovePath, profile)
 			agentMgr := agent.NewManager(agentRt)
 
 			if err := agentMgr.Stop(context.Background(), name); err != nil {

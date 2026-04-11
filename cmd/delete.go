@@ -294,12 +294,7 @@ func deleteStoppedViaHub(hubCtx *HubContext) error {
 }
 
 func deleteAgentLocal(agentName string) error {
-	effectiveProfile := profile
-	if effectiveProfile == "" {
-		effectiveProfile = agent.GetSavedRuntime(agentName, grovePath)
-	}
-
-	rt := runtime.GetRuntime(grovePath, effectiveProfile)
+	rt := runtime.GetRuntime(grovePath, profile)
 	mgr := agent.NewManager(rt)
 
 	fmt.Printf("Deleting agent '%s'...\n", agentName)

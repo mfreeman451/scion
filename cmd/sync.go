@@ -21,7 +21,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/GoogleCloudPlatform/scion/pkg/agent"
 	"github.com/GoogleCloudPlatform/scion/pkg/agent/state"
 	"github.com/GoogleCloudPlatform/scion/pkg/api"
 	"github.com/GoogleCloudPlatform/scion/pkg/config"
@@ -257,17 +256,7 @@ func runAgentSync(args []string) error {
 	}
 
 	// Solo mode: use existing local sync
-	effectiveProfile := profile
-	if effectiveProfile == "" {
-		effectiveProfile = agent.GetSavedProfile(agentName, grovePath)
-	}
-
-	effectiveRuntime := effectiveProfile
-	if effectiveRuntime == "" {
-		effectiveRuntime = agent.GetSavedRuntime(agentName, grovePath)
-	}
-
-	rt := runtime.GetRuntime(grovePath, effectiveRuntime)
+	rt := runtime.GetRuntime(grovePath, profile)
 
 	return rt.Sync(context.Background(), agentName, direction)
 }

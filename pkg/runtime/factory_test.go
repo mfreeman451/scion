@@ -147,6 +147,58 @@ func TestGetRuntime(t *testing.T) {
 		}
 	})
 
+	// Regression test: grove-level active_profile must override the global
+	// active_profile so that GetRuntime picks the correct runtime without
+	// the caller having to pass an explicit profile name.
+	t.Run("Settings_Grove_ActiveProfile_Override", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		t.Setenv("HOME", tmpHome)
+
+		grovePath := filepath.Join(tmpHome, "myproject")
+		groveScionDir := filepath.Join(grovePath, ".scion")
+		if err := os.MkdirAll(groveScionDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+
+		// Global: active_profile=local (podman), also defines apple profile (container)
+		globalDir := filepath.Join(tmpHome, ".scion")
+		if err := os.MkdirAll(globalDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		globalSettings := `
+schema_version: "1"
+active_profile: local
+runtimes:
+  container:
+    type: container
+  podman:
+    type: podman
+profiles:
+  local:
+    runtime: podman
+  apple:
+    runtime: container
+`
+		if err := os.WriteFile(filepath.Join(globalDir, "settings.yaml"), []byte(globalSettings), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Grove overrides active_profile to apple
+		groveSettings := `
+schema_version: "1"
+active_profile: apple
+`
+		if err := os.WriteFile(filepath.Join(groveScionDir, "settings.yaml"), []byte(groveSettings), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		// Call GetRuntime with empty profileName — should use grove's active_profile (apple → container)
+		r := GetRuntime(groveScionDir, "")
+		if _, ok := r.(*AppleContainerRuntime); !ok {
+			t.Errorf("expected *AppleContainerRuntime from grove active_profile override, got %T", r)
+		}
+	})
+
 	t.Run("Override_Param", func(t *testing.T) {
 		tmpHome := t.TempDir()
 		t.Setenv("HOME", tmpHome)
