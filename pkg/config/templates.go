@@ -788,14 +788,16 @@ func mergeKubernetesConfig(base, override *api.KubernetesConfig) *api.Kubernetes
 		result.ServiceAccountName = override.ServiceAccountName
 	}
 	if override.Resources != nil {
-		result.Resources = override.Resources
+		if result.Resources == nil {
+			result.Resources = &api.K8sResources{}
+		}
+		result.Resources = &api.K8sResources{
+			Requests: mergeMaps(result.Resources.Requests, override.Resources.Requests),
+			Limits:   mergeMaps(result.Resources.Limits, override.Resources.Limits),
+		}
 	}
 	if override.NodeSelector != nil {
-		nodeSelector := make(map[string]string, len(override.NodeSelector))
-		for k, v := range override.NodeSelector {
-			nodeSelector[k] = v
-		}
-		result.NodeSelector = nodeSelector
+		result.NodeSelector = mergeMaps(result.NodeSelector, override.NodeSelector)
 	}
 	if override.Tolerations != nil {
 		result.Tolerations = append([]api.K8sToleration(nil), override.Tolerations...)

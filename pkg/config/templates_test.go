@@ -805,10 +805,14 @@ func TestMergeScionConfig_NewFields(t *testing.T) {
 	t.Run("kubernetes override merges all supported fields", func(t *testing.T) {
 		base := &api.ScionConfig{
 			Kubernetes: &api.KubernetesConfig{
-				Context:               "base-ctx",
-				Namespace:             "base-ns",
-				RuntimeClassName:      "base-runtime",
-				ServiceAccountName:    "base-sa",
+				Context:            "base-ctx",
+				Namespace:          "base-ns",
+				RuntimeClassName:   "base-runtime",
+				ServiceAccountName: "base-sa",
+				Resources: &api.K8sResources{
+					Requests: map[string]string{"cpu": "250m"},
+					Limits:   map[string]string{"memory": "512Mi"},
+				},
 				NodeSelector:          map[string]string{"base": "true"},
 				Tolerations:           []api.K8sToleration{{Key: "base", Operator: "Exists"}},
 				ImagePullPolicy:       "IfNotPresent",
@@ -818,10 +822,14 @@ func TestMergeScionConfig_NewFields(t *testing.T) {
 		}
 		override := &api.ScionConfig{
 			Kubernetes: &api.KubernetesConfig{
-				Context:               "override-ctx",
-				Namespace:             "override-ns",
-				RuntimeClassName:      "override-runtime",
-				ServiceAccountName:    "override-sa",
+				Context:            "override-ctx",
+				Namespace:          "override-ns",
+				RuntimeClassName:   "override-runtime",
+				ServiceAccountName: "override-sa",
+				Resources: &api.K8sResources{
+					Requests: map[string]string{"memory": "1Gi"},
+					Limits:   map[string]string{"cpu": "500m"},
+				},
 				NodeSelector:          map[string]string{"override": "true"},
 				Tolerations:           []api.K8sToleration{{Key: "override", Operator: "Equal", Value: "true"}},
 				ImagePullPolicy:       "Never",
@@ -855,8 +863,17 @@ func TestMergeScionConfig_NewFields(t *testing.T) {
 		if got.Kubernetes.SharedDirSize != "20Gi" {
 			t.Errorf("expected SharedDirSize override, got %q", got.Kubernetes.SharedDirSize)
 		}
-		if len(got.Kubernetes.NodeSelector) != 1 || got.Kubernetes.NodeSelector["override"] != "true" {
-			t.Errorf("expected NodeSelector override, got %#v", got.Kubernetes.NodeSelector)
+		if got.Kubernetes.Resources == nil {
+			t.Fatal("expected Resources override to be present")
+		}
+		if got.Kubernetes.Resources.Requests["cpu"] != "250m" || got.Kubernetes.Resources.Requests["memory"] != "1Gi" {
+			t.Errorf("expected Requests maps merged, got %#v", got.Kubernetes.Resources.Requests)
+		}
+		if got.Kubernetes.Resources.Limits["memory"] != "512Mi" || got.Kubernetes.Resources.Limits["cpu"] != "500m" {
+			t.Errorf("expected Limits maps merged, got %#v", got.Kubernetes.Resources.Limits)
+		}
+		if len(got.Kubernetes.NodeSelector) != 2 || got.Kubernetes.NodeSelector["base"] != "true" || got.Kubernetes.NodeSelector["override"] != "true" {
+			t.Errorf("expected NodeSelector merged, got %#v", got.Kubernetes.NodeSelector)
 		}
 		if len(got.Kubernetes.Tolerations) != 1 || got.Kubernetes.Tolerations[0].Key != "override" {
 			t.Errorf("expected Tolerations override, got %#v", got.Kubernetes.Tolerations)
