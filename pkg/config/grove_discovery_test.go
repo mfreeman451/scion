@@ -516,6 +516,17 @@ func TestDiscoverGroves_GitGroveWithExternalConfigUsesWorkspaceMarkerGroveID(t *
 		t.Fatalf("mkdir .scion: %v", err)
 	}
 
+	if groveID, ok := os.LookupEnv("SCION_GROVE_ID"); ok {
+		if err := os.Unsetenv("SCION_GROVE_ID"); err != nil {
+			t.Fatalf("Unsetenv SCION_GROVE_ID failed: %v", err)
+		}
+		defer func() {
+			if err := os.Setenv("SCION_GROVE_ID", groveID); err != nil {
+				t.Fatalf("restore SCION_GROVE_ID failed: %v", err)
+			}
+		}()
+	}
+
 	groveDir := filepath.Join(tmpHome, ".scion", "grove-configs", "newrepo__ccdd1122")
 	scionDir := filepath.Join(groveDir, ".scion")
 	agentsDir := filepath.Join(scionDir, "agents", "worker1", "home")
