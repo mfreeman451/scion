@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -200,8 +201,8 @@ func TestStart_ErrorPropagation_Tmux_Missing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Setup MockRuntime with "executable file not found" error
-	originalErr := fmt.Errorf("container run failed: executable file not found in $PATH")
+	// Setup MockRuntime with exec.ErrNotFound
+	originalErr := fmt.Errorf("container run failed: %w", exec.ErrNotFound)
 	mockRuntime := &runtime.MockRuntime{
 		RunFunc: func(ctx context.Context, config runtime.RunConfig) (string, error) {
 			return "", originalErr

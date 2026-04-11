@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"sort"
@@ -40,13 +41,19 @@ func classifyLaunchRuntimeError(err error, resolvedImage string) error {
 	if err == nil {
 		return nil
 	}
-	msg := err.Error()
-	if strings.Contains(msg, "executable file not found") ||
-		strings.Contains(msg, "tmux: command not found") ||
-		strings.Contains(msg, "tmux: not found") {
+	if errors.Is(err, exec.ErrNotFound) || isTmuxShellNotFoundError(err) {
 		return fmt.Errorf("failed to launch container: %w in image %q: %w", ErrTmuxBinaryNotFound, resolvedImage, err)
 	}
 	return fmt.Errorf("failed to launch container: %w", err)
+}
+
+func isTmuxShellNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "tmux: command not found") ||
+		strings.Contains(msg, "tmux: not found")
 }
 
 func (m *AgentManager) Start(ctx context.Context, opts api.StartOptions) (*api.AgentInfo, error) {
@@ -144,7 +151,9 @@ func (m *AgentManager) Start(ctx context.Context, opts api.StartOptions) (*api.A
 		task = promptFileContent
 	} else if task != "" {
 		// Explicit prompt always wins — write/overwrite prompt.md
-		_ = os.WriteFile(promptFile, []byte(task), 0644)
+		if writeErr := os.WriteFile(promptFile, []byte(task), 0644); writeErr != nil {
+			return nil, fmt.Errorf("failed to write prompt file %s: %w", promptFile, writeErr)
+		}
 	}
 
 	// Load settings for registry resolution
@@ -580,7 +589,10 @@ func (m *AgentManager) Start(ctx context.Context, opts api.StartOptions) (*api.A
 		finalScionCfg.AuthSelectedType = opts.HarnessAuth
 		cfgData, marshalErr := json.MarshalIndent(finalScionCfg, "", "  ")
 		if marshalErr == nil {
-			_ = os.WriteFile(filepath.Join(agentDir, "scion-agent.json"), cfgData, 0644)
+			configPath := filepath.Join(agentDir, "scion-agent.json")
+			if writeErr := os.WriteFile(configPath, cfgData, 0644); writeErr != nil {
+				return nil, fmt.Errorf("failed to write agent config %s: %w", configPath, writeErr)
+			}
 		}
 	}
 
