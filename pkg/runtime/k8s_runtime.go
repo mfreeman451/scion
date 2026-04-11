@@ -1691,6 +1691,8 @@ func selectLogContainer(pod *corev1.Pod) string {
 		return pod.Spec.Containers[0].Name
 	}
 	for _, container := range pod.Spec.Containers {
+		// Hosted pods may include sidecars, but the interactive Scion process runs
+		// in the container named "agent". Prefer that container when present.
 		if container.Name == "agent" {
 			return container.Name
 		}
