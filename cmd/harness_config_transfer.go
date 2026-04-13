@@ -113,12 +113,16 @@ func uploadHarnessConfigFileBySignedURL(
 	service hubclient.HarnessConfigService,
 	fileInfo *hubclient.FileInfo,
 	urlInfo hubclient.UploadURLInfo,
-) error {
+) (err error) {
 	f, err := os.Open(fileInfo.FullPath)
 	if err != nil {
 		return fmt.Errorf("open harness config file for upload: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("close harness config file: %w", closeErr)
+		}
+	}()
 
 	if err := service.UploadFile(ctx, urlInfo.URL, urlInfo.Method, urlInfo.Headers, f); err != nil {
 		return fmt.Errorf("upload harness config file: %w", err)

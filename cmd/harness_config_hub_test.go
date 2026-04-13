@@ -35,21 +35,21 @@ func newMockHubServerForLocalStorageHarnessConfig(t *testing.T, uploadedPaths *[
 
 		switch {
 		case r.URL.Path == "/api/v1/harness-configs" && r.Method == http.MethodPost:
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{
 				"harnessConfig": map[string]interface{}{
 					"id":      "local-storage-hc-id",
 					"name":    "codex",
 					"harness": "codex",
 				},
-			})
+			}))
 
 		case r.URL.Path == "/api/v1/harness-configs" && r.Method == http.MethodGet:
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{
 				"harnessConfigs": []map[string]interface{}{},
-			})
+			}))
 
 		case r.URL.Path == "/api/v1/harness-configs/local-storage-hc-id/upload" && r.Method == http.MethodPost:
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]interface{}{
 				"uploadUrls": []map[string]interface{}{
 					{
 						"path":   "config.yaml",
@@ -57,7 +57,7 @@ func newMockHubServerForLocalStorageHarnessConfig(t *testing.T, uploadedPaths *[
 						"method": "PUT",
 					},
 				},
-			})
+			}))
 
 		case r.URL.Path == "/api/v1/harness-configs/local-storage-hc-id/files" && r.Method == http.MethodPost:
 			require.NoError(t, r.ParseMultipartForm(10<<20))
@@ -68,8 +68,8 @@ func newMockHubServerForLocalStorageHarnessConfig(t *testing.T, uploadedPaths *[
 					file, err := fh.Open()
 					require.NoError(t, err)
 					_, err = io.ReadAll(file)
-					file.Close()
 					require.NoError(t, err)
+					require.NoError(t, file.Close())
 				}
 			}
 			json.NewEncoder(w).Encode(map[string]interface{}{

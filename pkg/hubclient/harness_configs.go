@@ -322,12 +322,16 @@ func (s *harnessConfigService) getTransferClient() *transfer.Client {
 	return s.transferClient
 }
 
-func appendMultipartFile(writer *multipart.Writer, file FileInfo) error {
+func appendMultipartFile(writer *multipart.Writer, file FileInfo) (err error) {
 	src, err := os.Open(file.FullPath)
 	if err != nil {
 		return fmt.Errorf("open file for multipart upload: %w", err)
 	}
-	defer src.Close()
+	defer func() {
+		if closeErr := src.Close(); err == nil && closeErr != nil {
+			err = fmt.Errorf("close file for multipart upload: %w", closeErr)
+		}
+	}()
 
 	part, err := writer.CreateFormFile(file.Path, path.Base(file.Path))
 	if err != nil {

@@ -131,7 +131,7 @@ func (s *Server) handleHarnessConfigFileRead(w http.ResponseWriter, r *http.Requ
 		RuntimeError(w, "Failed to read file from storage")
 		return
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(reader, maxHarnessConfigFileSize+1))
 	if err != nil {
@@ -299,9 +299,13 @@ func (s *Server) handleHarnessConfigFileUpload(w http.ResponseWriter, r *http.Re
 			return
 		}
 		data, err := io.ReadAll(src)
-		src.Close()
+		closeErr := src.Close()
 		if err != nil {
 			BadRequest(w, "Failed to read multipart file: "+err.Error())
+			return
+		}
+		if closeErr != nil {
+			BadRequest(w, "Failed to close multipart file: "+closeErr.Error())
 			return
 		}
 
